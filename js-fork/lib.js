@@ -187,6 +187,8 @@ async function getSpeechTimestamps(
 function decodeWithFfmpeg(inputPath, { sampleRate = 16000, channels = 1 } = {}) {
   return new Promise((resolve, reject) => {
     const args = [
+      '-v',
+      'error',
       '-i',
       inputPath,
       '-ac',

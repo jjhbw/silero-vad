@@ -6,23 +6,33 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
 (async () => {
   try {
     const args = parseArgs(process.argv.slice(2));
-    if (!args.audio) {
+    if (!args.audio.length) {
       printUsage();
       process.exit(1);
     }
 
     const modelSpecifier = args.model || 'default';
     const vad = await loadSileroVad(modelSpecifier);
-    const audio = await decodeWithFfmpeg(args.audio, { sampleRate: args.sampleRate });
-    const timestamps = await getSpeechTimestamps(audio, vad, {
-      samplingRate: args.sampleRate,
-      threshold: args.threshold,
-      returnSeconds: args.seconds,
-      timeResolution: 3,
-    });
 
-    console.log(JSON.stringify(timestamps, null, 2));
-    await vad.session.release?.();
+    try {
+      const results = [];
+      for (const audioPath of args.audio) {
+        // reuse session, reset stream state per file
+        vad.resetStates();
+        const audio = await decodeWithFfmpeg(audioPath, { sampleRate: args.sampleRate });
+        const timestamps = await getSpeechTimestamps(audio, vad, {
+          samplingRate: args.sampleRate,
+          threshold: args.threshold,
+          returnSeconds: args.seconds,
+          timeResolution: 3,
+        });
+        results.push({ file: audioPath, timestamps });
+      }
+      console.log(JSON.stringify(results, null, 2));
+    } finally {
+      // Keep cleanup explicit so the pattern is clear for long-lived processes.
+      await vad.session.release?.();
+    }
   } catch (err) {
     console.error(err.message || err);
     process.exit(1);
@@ -32,7 +42,7 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
 function parseArgs(argv) {
   const out = {
     model: null,
-    audio: null,
+    audio: [],
     threshold: 0.5,
     sampleRate: 16000,
     seconds: true,
@@ -44,7 +54,7 @@ function parseArgs(argv) {
       out.model = argv[i + 1];
       i += 1;
     } else if (arg === '--audio') {
-      out.audio = argv[i + 1];
+      out.audio.push(argv[i + 1]);
       i += 1;
     } else if (arg === '--threshold') {
       out.threshold = parseFloat(argv[i + 1]);

@@ -3,12 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
 
-const { execFile } = require('child_process');
+const { decodeWithFfmpeg, getSpeechTimestamps, loadSileroVad } = require('..');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SNAPSHOT_DIR = path.join(ROOT, 'tests', 'snapshots');
 const DATA_DIR = path.join(ROOT, 'tests', 'data');
-const CLI = path.join(__dirname, '..', 'cli.js');
 
 function readSnapshot(name) {
   const p = path.join(SNAPSHOT_DIR, name);
@@ -16,32 +15,22 @@ function readSnapshot(name) {
   return JSON.parse(raw);
 }
 
-function runCli(audioPath, sampleRate) {
-  return new Promise((resolve, reject) => {
-    const args = ['--audio', audioPath, '--sampleRate', String(sampleRate)];
-    const child = execFile('node', [CLI, ...args], { encoding: 'utf8' }, (err, stdout, stderr) => {
-      if (err) {
-        err.stderr = stderr;
-        reject(err);
-        return;
-      }
-      try {
-        const parsed = JSON.parse(stdout);
-        resolve(parsed);
-      } catch (parseErr) {
-        reject(parseErr);
-      }
-    });
-  });
-}
-
 test('onnx snapshot matches python ground truth', async () => {
   const snapshot = readSnapshot('onnx.json');
+  const vad = await loadSileroVad('default');
 
   for (const entry of snapshot.snapshots) {
     await test(`file ${entry.file}`, async () => {
+      vad.resetStates();
       const wavPath = path.join(DATA_DIR, entry.file);
-      const ts = await runCli(wavPath, entry.sampling_rate);
+      const audio = await decodeWithFfmpeg(wavPath, { sampleRate: entry.sampling_rate });
+      const ts = await getSpeechTimestamps(audio, vad, {
+        samplingRate: entry.sampling_rate,
+        threshold: 0.5,
+        returnSeconds: true,
+        timeResolution: 3,
+      });
+
       if (entry.file === 'test.mp3') {
         // MP3 decoding in Node (ffmpeg) vs Python (torchaudio) can differ by encoder delay/padding,
         // so allow a small tolerance instead of strict equality.
@@ -57,4 +46,6 @@ test('onnx snapshot matches python ground truth', async () => {
       }
     });
   }
+
+  await vad.session.release?.();
 });

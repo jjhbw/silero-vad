@@ -18,6 +18,7 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
       samplingRate: args.sampleRate,
       threshold: args.threshold,
       returnSeconds: args.seconds,
+      timeResolution: 3,
     });
 
     console.log(JSON.stringify(timestamps, null, 2));

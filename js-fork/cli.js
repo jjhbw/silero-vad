@@ -2,7 +2,6 @@
 
 const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = require('./lib');
 
-// Simple CLI: node cli.js --model path/to/model.onnx --audio path/to/file [--threshold 0.5] [--seconds]
 (async () => {
   try {
     const args = parseArgs(process.argv.slice(2));

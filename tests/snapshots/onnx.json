@@ -1,0 +1,102 @@
+{
+  "model": "onnx",
+  "snapshots": [
+    {
+      "file": "test.wav",
+      "sampling_rate": 16000,
+      "speech_timestamps": [
+        {
+          "end": 2.046,
+          "start": 0.002
+        },
+        {
+          "end": 4.702,
+          "start": 2.658
+        },
+        {
+          "end": 6.878,
+          "start": 4.962
+        },
+        {
+          "end": 13.342,
+          "start": 9.314
+        },
+        {
+          "end": 15.102,
+          "start": 13.538
+        },
+        {
+          "end": 15.87,
+          "start": 15.33
+        },
+        {
+          "end": 17.918,
+          "start": 16.29
+        },
+        {
+          "end": 19.614,
+          "start": 18.37
+        },
+        {
+          "end": 32.606,
+          "start": 20.322
+        },
+        {
+          "end": 35.614,
+          "start": 32.706
+        },
+        {
+          "end": 37.63,
+          "start": 35.746
+        },
+        {
+          "end": 38.942,
+          "start": 37.954
+        },
+        {
+          "end": 43.294,
+          "start": 39.874
+        },
+        {
+          "end": 44.638,
+          "start": 43.618
+        },
+        {
+          "end": 46.814,
+          "start": 45.026
+        },
+        {
+          "end": 49.982,
+          "start": 48.834
+        },
+        {
+          "end": 54.238,
+          "start": 51.074
+        },
+        {
+          "end": 57.406,
+          "start": 54.466
+        },
+        {
+          "end": 59.582,
+          "start": 57.506
+        }
+      ]
+    },
+    {
+      "file": "test.opus",
+      "sampling_rate": 16000,
+      "speech_timestamps": []
+    },
+    {
+      "file": "test.mp3",
+      "sampling_rate": 16000,
+      "speech_timestamps": [
+        {
+          "end": 32.158,
+          "start": 0.226
+        }
+      ]
+    }
+  ]
+}

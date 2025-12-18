@@ -1,0 +1,17 @@
+{
+  "name": "silero-vad-node",
+  "version": "1.0.0",
+  "main": "lib.js",
+  "bin": {
+    "silero-vad-cli": "cli.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "onnxruntime-node": "^1.23.2"
+  }
+}

@@ -26,6 +26,8 @@ Options:
 - `--time-resolution <n>`: decimal places for seconds output (default `3`).
 - `--neg-threshold <float>`: override the negative threshold (default `threshold - 0.15`).
 - `--seconds`: output timestamps in seconds (default on).
+- `--strip-silence`: write a new WAV file with silences removed.
+- `--output-dir <path>`: output directory for strip-silence files (default: input dir).
 
 Outputs an array of `{ file, timestamps }` to stdout as JSON. The CLI reuses a single ONNX session and resets state per file.
 The sample rate is defined by the selected model (read from `vad.sampleRate`); it is not configurable in `getSpeechTimestamps`.

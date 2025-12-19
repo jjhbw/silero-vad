@@ -2,7 +2,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
 const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = require('./lib');
 
 const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
@@ -111,7 +110,7 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
               getStripOutputPath(audioPath, args.outputDir),
             );
             const stripT0 = performance.now();
-            await writeStrippedAudio(audioPath, segmentsSeconds, outputPath);
+            await writeStrippedAudio(audio, segmentsSeconds, effectiveSampleRate, outputPath);
             const stripT1 = performance.now();
             const strippedSeconds = segmentsSeconds.reduce(
               (sum, seg) => sum + (seg.end - seg.start),
@@ -281,8 +280,7 @@ function getStripOutputPath(inputPath, outputDir) {
   const dir = outputDir || path.dirname(inputPath);
   const ext = path.extname(inputPath);
   const base = path.basename(inputPath, ext);
-  const safeExt = ext || '.wav';
-  return path.join(dir, `${base}_speech${safeExt}`);
+  return path.join(dir, `${base}_speech.wav`);
 }
 
 function ensureUniquePath(outputPath) {
@@ -300,54 +298,64 @@ function ensureUniquePath(outputPath) {
   }
 }
 
-function buildConcatFilter(segmentsSeconds) {
-  const parts = [];
-  const labels = [];
-  let idx = 0;
-  for (const { start, end } of segmentsSeconds) {
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
-      continue;
-    }
-    const label = `a${idx}`;
-    parts.push(
-      `[0:a]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS[${label}]`,
-    );
-    labels.push(`[${label}]`);
-    idx += 1;
+function writeStrippedAudio(audio, segmentsSeconds, sampleRate, outputPath) {
+  if (!audio || !audio.length) {
+    throw new Error('No audio samples available to write');
   }
-  if (!labels.length) {
-    return null;
+  if (!sampleRate) {
+    throw new Error('Sample rate is required to write WAV');
   }
-  parts.push(`${labels.join('')}concat=n=${labels.length}:v=0:a=1[outa]`);
-  return parts.join(';');
+  const ranges = segmentsSeconds
+    .map(({ start, end }) => ({
+      start: Math.max(0, Math.floor(start * sampleRate)),
+      end: Math.min(audio.length, Math.floor(end * sampleRate)),
+    }))
+    .filter(({ start, end }) => end > start);
+  if (!ranges.length) {
+    throw new Error('No valid speech segments to write');
+  }
+  let totalSamples = 0;
+  for (const { start, end } of ranges) {
+    totalSamples += end - start;
+  }
+  const out = new Float32Array(totalSamples);
+  let offset = 0;
+  for (const { start, end } of ranges) {
+    out.set(audio.subarray(start, end), offset);
+    offset += end - start;
+  }
+  writeWavFile(outputPath, out, sampleRate);
 }
 
-function writeStrippedAudio(inputPath, segmentsSeconds, outputPath) {
-  return new Promise((resolve, reject) => {
-    const filter = buildConcatFilter(segmentsSeconds);
-    if (!filter) {
-      reject(new Error('No valid speech segments to write'));
-      return;
-    }
-    const args = [
-      '-v',
-      'error',
-      '-i',
-      inputPath,
-      '-filter_complex',
-      filter,
-      '-map',
-      '[outa]',
-      outputPath,
-    ];
-    const ffmpeg = spawn('ffmpeg', args, { stdio: ['ignore', 'inherit', 'inherit'] });
-    ffmpeg.on('error', reject);
-    ffmpeg.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`ffmpeg exited with code ${code}`));
-        return;
-      }
-      resolve();
-    });
-  });
+function writeWavFile(outputPath, samples, sampleRate) {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const blockAlign = (numChannels * bitsPerSample) / 8;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = samples.length * 2;
+  const buffer = Buffer.alloc(44 + dataSize);
+
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(numChannels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(byteRate, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bitsPerSample, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+
+  let writeOffset = 44;
+  for (let i = 0; i < samples.length; i += 1) {
+    const clamped = Math.max(-1, Math.min(1, samples[i]));
+    const int16 = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+    buffer.writeInt16LE(Math.round(int16), writeOffset);
+    writeOffset += 2;
+  }
+
+  fs.writeFileSync(outputPath, buffer);
 }

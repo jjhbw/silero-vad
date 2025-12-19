@@ -12,15 +12,16 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
 
     const modelSpecifier = args.model || 'default';
     const vad = await loadSileroVad(modelSpecifier);
+    const effectiveSampleRate = args.sampleRate || vad.defaultSampleRate || 16000;
 
     try {
       const results = [];
       for (const audioPath of args.audio) {
         // reuse session, reset stream state per file
         vad.resetStates();
-        const audio = await decodeWithFfmpeg(audioPath, { sampleRate: args.sampleRate });
+        const audio = await decodeWithFfmpeg(audioPath, { sampleRate: effectiveSampleRate });
         const timestamps = await getSpeechTimestamps(audio, vad, {
-          samplingRate: args.sampleRate,
+          samplingRate: effectiveSampleRate,
           threshold: args.threshold,
           returnSeconds: args.seconds,
           timeResolution: 3,
@@ -43,7 +44,7 @@ function parseArgs(argv) {
     model: null,
     audio: [],
     threshold: 0.5,
-    sampleRate: 16000,
+    sampleRate: null,
     seconds: true,
   };
 

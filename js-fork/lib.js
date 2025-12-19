@@ -3,11 +3,11 @@ const { spawn } = require('child_process');
 const ort = require('onnxruntime-node');
 
 const WEIGHTS = {
-  default: path.join(__dirname, 'weights', 'silero_vad_16k_op15.onnx'),
-  '16k': path.join(__dirname, 'weights', 'silero_vad_16k_op15.onnx'),
-  '8k_16k': path.join(__dirname, 'weights', 'silero_vad.onnx'),
-  half: path.join(__dirname, 'weights', 'silero_vad_half.onnx'),
-  op18: path.join(__dirname, 'weights', 'silero_vad_op18_ifless.onnx'),
+  default: { path: path.join(__dirname, 'weights', 'silero_vad_16k_op15.onnx'), sampleRate: 16000 },
+  '16k': { path: path.join(__dirname, 'weights', 'silero_vad_16k_op15.onnx'), sampleRate: 16000 },
+  '8k_16k': { path: path.join(__dirname, 'weights', 'silero_vad.onnx'), sampleRate: 16000 }, // decode to 16k by default
+  half: { path: path.join(__dirname, 'weights', 'silero_vad_half.onnx'), sampleRate: 16000 },
+  op18: { path: path.join(__dirname, 'weights', 'silero_vad_op18_ifless.onnx'), sampleRate: 16000 },
 };
 
 // Minimal get_speech_timestamps port that runs the Silero VAD ONNX model in Node.
@@ -65,9 +65,12 @@ class SileroVad {
 }
 
 async function loadSileroVad(model = 'default', opts = {}) {
-  const modelPath = WEIGHTS[model] || model || WEIGHTS.default;
+  const spec = WEIGHTS[model];
+  const modelPath = spec ? spec.path : model || WEIGHTS.default.path;
   const session = await ort.InferenceSession.create(modelPath, opts.sessionOptions);
-  return new SileroVad(session);
+  const vad = new SileroVad(session);
+  vad.defaultSampleRate = spec ? spec.sampleRate : 16000;
+  return vad;
 }
 
 async function getSpeechTimestamps(

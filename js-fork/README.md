@@ -20,7 +20,7 @@ npx silero-vad-cli --audio input.wav --audio other.mp3 [options]
 Options:
 - `--model <key|path>`: model key (`default`, `16k`, `8k_16k`, `half`, `op18`) or custom ONNX path (default: `default`, i.e., bundled 16k op15).
 - `--threshold <float>`: speech probability threshold (default `0.5`).
-- `--sampleRate <int>`: target sample rate for decoding (default `16000`).
+- `--sampleRate <int>`: target sample rate for decoding. Defaults to the model’s suggested rate (16k for bundled models).
 - `--seconds`: output timestamps in seconds (default on).
 
 Outputs an array of `{ file, timestamps }` to stdout as JSON. The CLI reuses a single ONNX session and resets state per file.
@@ -38,9 +38,10 @@ const {
 (async () => {
   const vad = await loadSileroVad('default'); // or WEIGHTS keys/custom path
   try {
+    const sr = vad.defaultSampleRate
     vad.resetStates(); // per file/stream
-    const audio = await decodeWithFfmpeg('input.wav', { sampleRate: 16000 });
-    const ts = await getSpeechTimestamps(audio, vad, { returnSeconds: true });
+    const audio = await decodeWithFfmpeg('input.wav', { sampleRate: sr });
+    const ts = await getSpeechTimestamps(audio, vad, { samplingRate: sr, returnSeconds: true });
     console.log(ts);
   } finally {
     await vad.session.release?.();

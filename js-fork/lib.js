@@ -175,9 +175,13 @@ async function getSpeechTimestamps(
   return speeches;
 }
 
-// Decode arbitrary audio with ffmpeg into mono, 16 kHz, float32 PCM for the VAD.
-function decodeWithFfmpeg(inputPath, { sampleRate = 16000, channels = 1 } = {}) {
+// Decode arbitrary audio with ffmpeg into mono, float32 PCM for the VAD.
+function decodeWithFfmpeg(inputPath, { sampleRate } = {}) {
+  if (!sampleRate) {
+    throw new Error('decodeWithFfmpeg: sampleRate is required');
+  }
   return new Promise((resolve, reject) => {
+    const channels = 1; // mono
     const args = [
       '-v',
       'error',

@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
 const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = require('./lib');
 
 const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
@@ -92,6 +95,34 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
         for (const line of lines) {
           console.info(line);
         }
+
+        if (args.stripSilence) {
+          const segmentsSeconds = timestamps.map(({ start, end, startSeconds, endSeconds }) => ({
+            start: args.seconds ? start : startSeconds,
+            end: args.seconds ? end : endSeconds,
+          }));
+          if (!segmentsSeconds.length) {
+            console.info(`strip_silence=skipped (no speech detected)`);
+          } else {
+            if (args.outputDir && !fs.existsSync(args.outputDir)) {
+              fs.mkdirSync(args.outputDir, { recursive: true });
+            }
+            const outputPath = ensureUniquePath(
+              getStripOutputPath(audioPath, args.outputDir),
+            );
+            const stripT0 = performance.now();
+            await writeStrippedAudio(audioPath, segmentsSeconds, outputPath);
+            const stripT1 = performance.now();
+            const strippedSeconds = segmentsSeconds.reduce(
+              (sum, seg) => sum + (seg.end - seg.start),
+              0,
+            );
+            console.info(
+              `strip_silence_output=${outputPath} duration=${strippedSeconds.toFixed(2)}s`,
+            );
+            console.info(`strip_silence_took=${(stripT1 - stripT0).toFixed(2)}ms`);
+          }
+        }
       }
     } finally {
       // Keep cleanup explicit so the pattern is clear for long-lived processes.
@@ -115,6 +146,8 @@ function parseArgs(argv) {
     negThreshold: null,
     seconds: true,
     charsPerSecond: 4,
+    stripSilence: false,
+    outputDir: null,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -166,6 +199,11 @@ function parseArgs(argv) {
         out.charsPerSecond = value;
       }
       i += 1;
+    } else if (arg === '--strip-silence') {
+      out.stripSilence = true;
+    } else if (arg === '--output-dir') {
+      out.outputDir = argv[i + 1];
+      i += 1;
     } else if (arg === '--help' || arg === '-h') {
       printUsage();
       process.exit(0);
@@ -188,6 +226,8 @@ Options:
   --neg-threshold <f>    Negative threshold override (default: threshold - 0.15)
   --seconds              Output timestamps in seconds (default: on)
   --cps <float>          Timeline chars per second (default: 4)
+  --strip-silence         Write a new file with all silences removed
+  --output-dir <path>     Output directory for strip-silence files (default: input dir)
   -h, --help             Show this message`);
 }
 
@@ -235,4 +275,79 @@ function formatDuration(seconds) {
   const mins = Math.floor(whole / 60);
   const secs = String(whole % 60).padStart(2, '0');
   return `${mins}:${secs}`;
+}
+
+function getStripOutputPath(inputPath, outputDir) {
+  const dir = outputDir || path.dirname(inputPath);
+  const ext = path.extname(inputPath);
+  const base = path.basename(inputPath, ext);
+  const safeExt = ext || '.wav';
+  return path.join(dir, `${base}_speech${safeExt}`);
+}
+
+function ensureUniquePath(outputPath) {
+  if (!fs.existsSync(outputPath)) {
+    return outputPath;
+  }
+  const dir = path.dirname(outputPath);
+  const ext = path.extname(outputPath);
+  const base = path.basename(outputPath, ext);
+  for (let i = 1; ; i += 1) {
+    const candidate = path.join(dir, `${base}-${i}${ext}`);
+    if (!fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+}
+
+function buildConcatFilter(segmentsSeconds) {
+  const parts = [];
+  const labels = [];
+  let idx = 0;
+  for (const { start, end } of segmentsSeconds) {
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      continue;
+    }
+    const label = `a${idx}`;
+    parts.push(
+      `[0:a]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS[${label}]`,
+    );
+    labels.push(`[${label}]`);
+    idx += 1;
+  }
+  if (!labels.length) {
+    return null;
+  }
+  parts.push(`${labels.join('')}concat=n=${labels.length}:v=0:a=1[outa]`);
+  return parts.join(';');
+}
+
+function writeStrippedAudio(inputPath, segmentsSeconds, outputPath) {
+  return new Promise((resolve, reject) => {
+    const filter = buildConcatFilter(segmentsSeconds);
+    if (!filter) {
+      reject(new Error('No valid speech segments to write'));
+      return;
+    }
+    const args = [
+      '-v',
+      'error',
+      '-i',
+      inputPath,
+      '-filter_complex',
+      filter,
+      '-map',
+      '[outa]',
+      outputPath,
+    ];
+    const ffmpeg = spawn('ffmpeg', args, { stdio: ['ignore', 'inherit', 'inherit'] });
+    ffmpeg.on('error', reject);
+    ffmpeg.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffmpeg exited with code ${code}`));
+        return;
+      }
+      resolve();
+    });
+  });
 }

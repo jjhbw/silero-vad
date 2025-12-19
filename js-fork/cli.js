@@ -22,16 +22,31 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
       for (const audioPath of args.audio) {
         // reuse session, reset stream state per file
         vad.resetStates();
+        const t0 = performance.now();
         const audio = await decodeWithFfmpeg(audioPath, { sampleRate: effectiveSampleRate });
+        const t1 = performance.now();
         const timestamps = await getSpeechTimestamps(audio, vad, {
           samplingRate: effectiveSampleRate,
           threshold: args.threshold,
           returnSeconds: args.seconds,
           timeResolution: 3,
         });
+        const t2 = performance.now();
         results.push({ file: audioPath, timestamps });
+
+        const mem = process.memoryUsage();
+        const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
+        console.info(
+          [
+            `file=${audioPath}`,
+            `decode_ms=${(t1 - t0).toFixed(2)}`,
+            `vad_ms=${(t2 - t1).toFixed(2)}`,
+            `rss_mb=${toMB(mem.rss)}`,
+            `heapUsed_mb=${toMB(mem.heapUsed)}`,
+            `external_mb=${toMB(mem.external)}`,
+          ].join(' '),
+        );
       }
-      console.log(JSON.stringify(results, null, 2));
     } finally {
       // Keep cleanup explicit so the pattern is clear for long-lived processes.
       await vad.session.release?.();

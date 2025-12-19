@@ -12,7 +12,7 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
 
     const modelSpecifier = args.model || 'default';
     const vad = await loadSileroVad(modelSpecifier);
-    const effectiveSampleRate = args.sampleRate || vad.defaultSampleRate || 16000;
+    const effectiveSampleRate = vad.defaultSampleRate || 16000;
 
     try {
       const results = [];
@@ -44,7 +44,6 @@ function parseArgs(argv) {
     model: null,
     audio: [],
     threshold: 0.5,
-    sampleRate: null,
     seconds: true,
   };
 
@@ -58,9 +57,6 @@ function parseArgs(argv) {
       i += 1;
     } else if (arg === '--threshold') {
       out.threshold = parseFloat(argv[i + 1]);
-      i += 1;
-    } else if (arg === '--sampleRate') {
-      out.sampleRate = parseInt(argv[i + 1], 10);
       i += 1;
     } else if (arg === '--seconds') {
       out.seconds = true;
@@ -79,7 +75,6 @@ function printUsage() {
 Options:
   --model <key|path>    Model key (${Object.keys(WEIGHTS).join(', ')}) or custom path (default: default)
   --threshold <float>    Speech probability threshold (default: 0.5)
-  --sampleRate <int>     Target sample rate for decoding (default: 16000)
   --seconds              Output timestamps in seconds (default: on)
   -h, --help             Show this message`);
 }

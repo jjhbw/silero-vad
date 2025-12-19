@@ -34,6 +34,21 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
         const t2 = performance.now();
         results.push({ file: audioPath, timestamps });
 
+        const durationSeconds = audio.length / effectiveSampleRate;
+        const lines = renderTimelineLines(
+          timestamps,
+          durationSeconds,
+          args.charsPerSecond,
+          120,
+        );
+        const secondsPerChar = 1 / args.charsPerSecond;
+        console.info(
+          `legend: # speech  . silence  (1 char = ${secondsPerChar.toFixed(2)}s)  duration ${formatDuration(durationSeconds)}`,
+        );
+        for (const line of lines) {
+          console.info(line);
+        }
+
         const mem = process.memoryUsage();
         const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
         console.info(
@@ -63,6 +78,7 @@ function parseArgs(argv) {
     audio: [],
     threshold: 0.5,
     seconds: true,
+    charsPerSecond: 4,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -78,6 +94,12 @@ function parseArgs(argv) {
       i += 1;
     } else if (arg === '--seconds') {
       out.seconds = true;
+    } else if (arg === '--cps') {
+      const value = parseFloat(argv[i + 1]);
+      if (Number.isFinite(value) && value > 0) {
+        out.charsPerSecond = value;
+      }
+      i += 1;
     } else if (arg === '--help' || arg === '-h') {
       printUsage();
       process.exit(0);
@@ -94,5 +116,39 @@ Options:
   --model <key|path>    Model key (${Object.keys(WEIGHTS).join(', ')}) or custom path (default: default)
   --threshold <float>    Speech probability threshold (default: 0.5)
   --seconds              Output timestamps in seconds (default: on)
+  --cps <float>          Timeline chars per second (default: 4)
   -h, --help             Show this message`);
+}
+
+function renderTimelineLines(timestamps, durationSeconds, charsPerSecond, maxLineWidth) {
+  if (!durationSeconds || durationSeconds <= 0 || charsPerSecond <= 0) {
+    return ['[no audio]'];
+  }
+
+  const width = Math.max(1, Math.ceil(durationSeconds * charsPerSecond));
+  const slots = new Array(width).fill('.');
+  for (const { start, end } of timestamps) {
+    const startIdx = Math.max(0, Math.floor((start / durationSeconds) * width));
+    const endIdx = Math.min(width, Math.ceil((end / durationSeconds) * width));
+    for (let i = startIdx; i < endIdx; i += 1) {
+      slots[i] = '#';
+    }
+  }
+
+  if (!maxLineWidth || maxLineWidth <= 0) {
+    return [`|${slots.join('')}|`];
+  }
+
+  const lines = [];
+  for (let i = 0; i < slots.length; i += maxLineWidth) {
+    lines.push(`|${slots.slice(i, i + maxLineWidth).join('')}|`);
+  }
+  return lines;
+}
+
+function formatDuration(seconds) {
+  const whole = Math.max(0, Math.round(seconds));
+  const mins = Math.floor(whole / 60);
+  const secs = String(whole % 60).padStart(2, '0');
+  return `${mins}:${secs}`;
 }

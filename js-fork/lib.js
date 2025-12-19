@@ -91,19 +91,8 @@ async function getSpeechTimestamps(
     throw new Error('Pass a loaded SileroVad instance');
   }
 
-  let sr = samplingRate;
-  let wav = audio instanceof Float32Array ? audio : Float32Array.from(audio);
-
-  // Downsample if the audio is a multiple of 16 kHz (mirrors the Python helper).
-  if (sr > 16000 && sr % 16000 === 0) {
-    const step = sr / 16000;
-    const reduced = new Float32Array(Math.ceil(wav.length / step));
-    for (let i = 0, j = 0; i < wav.length; i += step, j += 1) {
-      reduced[j] = wav[Math.floor(i)];
-    }
-    wav = reduced;
-    sr = 16000;
-  }
+  const sr = samplingRate;
+  const wav = audio instanceof Float32Array ? audio : Float32Array.from(audio);
 
   if (sr !== 8000 && sr !== 16000) {
     throw new Error('Supported sampling rates: 8000 or 16000 (or a multiple of 16000).');

@@ -23,6 +23,7 @@ Options:
 - `--seconds`: output timestamps in seconds (default on).
 
 Outputs an array of `{ file, timestamps }` to stdout as JSON. The CLI reuses a single ONNX session and resets state per file.
+The sample rate is defined by the selected model; no fallback is applied to prevent misuse.
 
 ## Library usage
 
@@ -37,7 +38,8 @@ const {
 (async () => {
   const vad = await loadSileroVad('default'); // or WEIGHTS keys/custom path
   try {
-    const sr = vad.defaultSampleRate || 16000;
+    if (!vad.defaultSampleRate) throw new Error('Model sample rate is undefined');
+    const sr = vad.defaultSampleRate;
     vad.resetStates(); // per file/stream
     const audio = await decodeWithFfmpeg('input.wav', { sampleRate: sr });
     const ts = await getSpeechTimestamps(audio, vad, { samplingRate: sr, returnSeconds: true });

@@ -12,7 +12,10 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
 
     const modelSpecifier = args.model || 'default';
     const vad = await loadSileroVad(modelSpecifier);
-    const effectiveSampleRate = vad.defaultSampleRate || 16000;
+    if (!vad.defaultSampleRate) {
+      throw new Error('No sample rate available for selected model. Please use a bundled model key.');
+    }
+    const effectiveSampleRate = vad.defaultSampleRate;
 
     try {
       const results = [];

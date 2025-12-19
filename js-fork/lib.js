@@ -69,7 +69,7 @@ async function loadSileroVad(model = 'default', opts = {}) {
   const modelPath = spec ? spec.path : model || WEIGHTS.default.path;
   const session = await ort.InferenceSession.create(modelPath, opts.sessionOptions);
   const vad = new SileroVad(session);
-  vad.defaultSampleRate = spec ? spec.sampleRate : 16000;
+  vad.defaultSampleRate = spec ? spec.sampleRate : null;
   return vad;
 }
 

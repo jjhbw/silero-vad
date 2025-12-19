@@ -2,6 +2,8 @@
 
 const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = require('./lib');
 
+const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
+
 (async () => {
   try {
     const args = parseArgs(process.argv.slice(2));
@@ -34,26 +36,10 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
           timeResolution: args.timeResolution,
           negThreshold: args.negThreshold,
         });
-        const t2 = performance.now();
         results.push({ file: audioPath, timestamps });
 
-        const durationSeconds = audio.length / effectiveSampleRate;
-        const lines = renderTimelineLines(
-          timestamps,
-          durationSeconds,
-          args.charsPerSecond,
-          120,
-        );
-        const secondsPerChar = 1 / args.charsPerSecond;
-        console.info(
-          `legend: # speech  . silence  (1 char = ${secondsPerChar.toFixed(2)}s)  duration ${formatDuration(durationSeconds)}`,
-        );
-        for (const line of lines) {
-          console.info(line);
-        }
-
+        const t2 = performance.now();
         const mem = process.memoryUsage();
-        const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
         console.info(
           [
             `file=${audioPath}`,
@@ -64,6 +50,23 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
             `external_mb=${toMB(mem.external)}`,
           ].join(' '),
         );
+        const durationSeconds = audio.length / effectiveSampleRate;
+        const lines = renderTimelineLines(
+          timestamps,
+          durationSeconds,
+          args.charsPerSecond,
+          120,
+        );
+        const secondsPerChar = 1 / args.charsPerSecond;
+
+        console.info(
+          `legend: # speech  . silence  (1 char = ${secondsPerChar.toFixed(2)}s)  duration ${formatDuration(durationSeconds)}`,
+        );
+        for (const line of lines) {
+          console.info(line);
+        }
+
+
       }
     } finally {
       // Keep cleanup explicit so the pattern is clear for long-lived processes.

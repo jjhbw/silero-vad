@@ -12,10 +12,10 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
 
     const modelSpecifier = args.model || 'default';
     const vad = await loadSileroVad(modelSpecifier);
-    if (!vad.defaultSampleRate) {
+    if (!vad.sampleRate) {
       throw new Error('No sample rate available for selected model. Please use a bundled model key.');
     }
-    const effectiveSampleRate = vad.defaultSampleRate;
+    const effectiveSampleRate = vad.sampleRate;
 
     try {
       const results = [];
@@ -26,10 +26,13 @@ const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = requir
         const audio = await decodeWithFfmpeg(audioPath, { sampleRate: effectiveSampleRate });
         const t1 = performance.now();
         const timestamps = await getSpeechTimestamps(audio, vad, {
-          samplingRate: effectiveSampleRate,
           threshold: args.threshold,
+          minSpeechDurationMs: args.minSpeechDurationMs,
+          minSilenceDurationMs: args.minSilenceDurationMs,
+          speechPadMs: args.speechPadMs,
           returnSeconds: args.seconds,
-          timeResolution: 3,
+          timeResolution: args.timeResolution,
+          negThreshold: args.negThreshold,
         });
         const t2 = performance.now();
         results.push({ file: audioPath, timestamps });
@@ -77,6 +80,11 @@ function parseArgs(argv) {
     model: null,
     audio: [],
     threshold: 0.5,
+    minSpeechDurationMs: 250,
+    minSilenceDurationMs: 100,
+    speechPadMs: 30,
+    timeResolution: 3,
+    negThreshold: null,
     seconds: true,
     charsPerSecond: 4,
   };
@@ -91,6 +99,36 @@ function parseArgs(argv) {
       i += 1;
     } else if (arg === '--threshold') {
       out.threshold = parseFloat(argv[i + 1]);
+      i += 1;
+    } else if (arg === '--min-speech-ms') {
+      const value = parseFloat(argv[i + 1]);
+      if (Number.isFinite(value) && value >= 0) {
+        out.minSpeechDurationMs = value;
+      }
+      i += 1;
+    } else if (arg === '--min-silence-ms') {
+      const value = parseFloat(argv[i + 1]);
+      if (Number.isFinite(value) && value >= 0) {
+        out.minSilenceDurationMs = value;
+      }
+      i += 1;
+    } else if (arg === '--speech-pad-ms') {
+      const value = parseFloat(argv[i + 1]);
+      if (Number.isFinite(value) && value >= 0) {
+        out.speechPadMs = value;
+      }
+      i += 1;
+    } else if (arg === '--time-resolution') {
+      const value = parseInt(argv[i + 1], 10);
+      if (Number.isFinite(value) && value >= 0) {
+        out.timeResolution = value;
+      }
+      i += 1;
+    } else if (arg === '--neg-threshold') {
+      const value = parseFloat(argv[i + 1]);
+      if (Number.isFinite(value)) {
+        out.negThreshold = value;
+      }
       i += 1;
     } else if (arg === '--seconds') {
       out.seconds = true;
@@ -115,6 +153,11 @@ function printUsage() {
 Options:
   --model <key|path>    Model key (${Object.keys(WEIGHTS).join(', ')}) or custom path (default: default)
   --threshold <float>    Speech probability threshold (default: 0.5)
+  --min-speech-ms <ms>   Minimum speech duration in ms (default: 250)
+  --min-silence-ms <ms>  Minimum silence duration in ms (default: 100)
+  --speech-pad-ms <ms>   Padding added to speech segments in ms (default: 30)
+  --time-resolution <n>  Decimal places for seconds output (default: 3)
+  --neg-threshold <f>    Negative threshold override (default: threshold - 0.15)
   --seconds              Output timestamps in seconds (default: on)
   --cps <float>          Timeline chars per second (default: 4)
   -h, --help             Show this message`);

@@ -69,7 +69,7 @@ async function loadSileroVad(model = 'default', opts = {}) {
   const modelPath = spec ? spec.path : model || WEIGHTS.default.path;
   const session = await ort.InferenceSession.create(modelPath, opts.sessionOptions);
   const vad = new SileroVad(session);
-  vad.defaultSampleRate = spec ? spec.sampleRate : null;
+  vad.sampleRate = spec ? spec.sampleRate : null;
   return vad;
 }
 
@@ -77,7 +77,6 @@ async function getSpeechTimestamps(
   audio,
   vad,
   {
-    samplingRate = 16000,
     threshold = 0.5,
     minSpeechDurationMs = 250,
     minSilenceDurationMs = 100,
@@ -91,7 +90,10 @@ async function getSpeechTimestamps(
     throw new Error('Pass a loaded SileroVad instance');
   }
 
-  const sr = samplingRate;
+  const sr = vad.sampleRate;
+  if (!sr) {
+    throw new Error('VAD sample rate is undefined. Use a bundled model key.');
+  }
   const wav = audio instanceof Float32Array ? audio : Float32Array.from(audio);
 
   if (sr !== 8000 && sr !== 16000) {

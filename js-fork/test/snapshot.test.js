@@ -23,9 +23,8 @@ test('onnx snapshot matches python ground truth', async () => {
     await test(`file ${entry.file}`, async () => {
       vad.resetStates();
       const wavPath = path.join(DATA_DIR, entry.file);
-      const audio = await decodeWithFfmpeg(wavPath, { sampleRate: entry.sampling_rate });
+      const audio = await decodeWithFfmpeg(wavPath, { sampleRate: vad.sampleRate });
       const ts = await getSpeechTimestamps(audio, vad, {
-        samplingRate: entry.sampling_rate,
         threshold: 0.5,
         returnSeconds: true,
         timeResolution: 3,

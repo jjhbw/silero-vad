@@ -48,6 +48,7 @@ const {
     vad.resetStates(); // per file/stream
     const audio = await decodeWithFfmpeg('input.wav', { sampleRate: sr });
     const ts = await getSpeechTimestamps(audio, vad, { returnSeconds: true });
+    // Each entry includes both seconds (start/end) and samples (startSample/endSample).
     console.log(ts);
   } finally {
     await vad.session.release?.();

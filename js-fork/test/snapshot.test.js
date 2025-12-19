@@ -30,18 +30,20 @@ test('onnx snapshot matches python ground truth', async () => {
         timeResolution: 3,
       });
 
+      const plainTs = ts.map(({ start, end }) => ({ start, end }));
+
       if (entry.file === 'test.mp3') {
         // MP3 decoding in Node (ffmpeg) vs Python (torchaudio) can differ by encoder delay/padding,
         // so allow a small tolerance instead of strict equality.
-        assert.strictEqual(ts.length, entry.speech_timestamps.length);
-        for (let i = 0; i < ts.length; i += 1) {
-          const a = ts[i];
+        assert.strictEqual(plainTs.length, entry.speech_timestamps.length);
+        for (let i = 0; i < plainTs.length; i += 1) {
+          const a = plainTs[i];
           const e = entry.speech_timestamps[i];
           assert.ok(Math.abs(a.start - e.start) <= 0.1, `start mismatch for ${entry.file}`);
           assert.ok(Math.abs(a.end - e.end) <= 0.1, `end mismatch for ${entry.file}`);
         }
       } else {
-        assert.deepStrictEqual(ts, entry.speech_timestamps);
+        assert.deepStrictEqual(plainTs, entry.speech_timestamps);
       }
     });
   }

@@ -169,12 +169,22 @@ async function getSpeechTimestamps(
     speech.end = Math.min(wav.length, Math.floor(padEnd));
   }
 
+  const convertSeconds = (samples) => +(samples / sr).toFixed(timeResolution);
   if (returnSeconds) {
-    const convert = (samples) => +(samples / sr).toFixed(timeResolution);
-    return speeches.map(({ start, end }) => ({ start: convert(start), end: convert(end) }));
+    return speeches.map(({ start, end }) => ({
+      start: convertSeconds(start),
+      end: convertSeconds(end),
+      startSample: start,
+      endSample: end,
+    }));
   }
 
-  return speeches;
+  return speeches.map(({ start, end }) => ({
+    start,
+    end,
+    startSeconds: convertSeconds(start),
+    endSeconds: convertSeconds(end),
+  }));
 }
 
 // Decode arbitrary audio with ffmpeg into mono, float32 PCM for the VAD.

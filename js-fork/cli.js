@@ -36,21 +36,20 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
           timeResolution: args.timeResolution,
           negThreshold: args.negThreshold,
         });
+        const t2 = performance.now();
         results.push({ file: audioPath, timestamps });
 
-        const t2 = performance.now();
         const mem = process.memoryUsage();
-        console.info(
-          [
-            `file=${audioPath}`,
-            `decode_ms=${(t1 - t0).toFixed(2)}`,
-            `vad_ms=${(t2 - t1).toFixed(2)}`,
-            `rss_mb=${toMB(mem.rss)}`,
-            `heapUsed_mb=${toMB(mem.heapUsed)}`,
-            `external_mb=${toMB(mem.external)}`,
-          ].join(' '),
+        const speechSeconds = getSpeechDurationSeconds(
+          timestamps,
+          args.seconds,
+          effectiveSampleRate,
         );
         const durationSeconds = audio.length / effectiveSampleRate;
+        const silenceSeconds = Math.max(0, durationSeconds - speechSeconds);
+        const totalForPct = durationSeconds > 0 ? durationSeconds : 1;
+        const speechPct = (speechSeconds / totalForPct) * 100;
+        const silencePct = (silenceSeconds / totalForPct) * 100;
         const lines = renderTimelineLines(
           timestamps,
           durationSeconds,
@@ -58,15 +57,41 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
           120,
         );
         const secondsPerChar = 1 / args.charsPerSecond;
-
         console.info(
-          `legend: # speech  . silence  (1 char = ${secondsPerChar.toFixed(2)}s)  duration ${formatDuration(durationSeconds)}`,
+          [
+            `file=${audioPath}`,
+            `duration=${formatDuration(durationSeconds)}`,
+          ].join(' '),
+        );
+        console.info([
+          `speech=${speechSeconds.toFixed(2)}s (${speechPct.toFixed(1)}%)`,
+          `silence=${silenceSeconds.toFixed(2)}s (${silencePct.toFixed(1)}%)`, ,
+          `total=${durationSeconds.toFixed(2)}s`
+        ].join(' ')
+        );
+        const totalMs = t2 - t0;
+        const totalForPctMs = totalMs > 0 ? totalMs : 1;
+        const decodePct = ((t1 - t0) / totalForPctMs) * 100;
+        const vadPct = ((t2 - t1) / totalForPctMs) * 100;
+        console.info(
+          [
+            `decode_took=${(t1 - t0).toFixed(2)} (${decodePct.toFixed(1)}%)`,
+            `vad_took=${(t2 - t1).toFixed(2)} (${vadPct.toFixed(1)}%)`,
+          ].join(' '),
+        );
+        console.info(
+          [
+            `rss_mb=${toMB(mem.rss)}`,
+            `heapUsed_mb=${toMB(mem.heapUsed)}`,
+            `external_mb=${toMB(mem.external)}`,
+          ].join(' '),
+        );
+        console.info(
+          `legend: # speech  . silence  (1 char = ${secondsPerChar.toFixed(2)}s)`,
         );
         for (const line of lines) {
           console.info(line);
         }
-
-
       }
     } finally {
       // Keep cleanup explicit so the pattern is clear for long-lived processes.
@@ -190,6 +215,19 @@ function renderTimelineLines(timestamps, durationSeconds, charsPerSecond, maxLin
     lines.push(`|${slots.slice(i, i + maxLineWidth).join('')}|`);
   }
   return lines;
+}
+
+function getSpeechDurationSeconds(timestamps, timestampsInSeconds, sampleRate) {
+  if (!timestamps || !timestamps.length) {
+    new Error("Need timestamps")
+  }
+  if (!sampleRate) {
+    new Error("Need sampleRate")
+  }
+  if (timestampsInSeconds) {
+    return timestamps.reduce((sum, { start, end }) => sum + (end - start), 0);
+  }
+  return timestamps.reduce((sum, { start, end }) => sum + (end - start) / sampleRate, 0);
 }
 
 function formatDuration(seconds) {

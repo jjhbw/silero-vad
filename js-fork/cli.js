@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
+const fsp = fs.promises;
 const path = require('path');
 const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = require('./lib');
 
@@ -103,14 +104,16 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
           if (!segmentsSeconds.length) {
             console.info(`strip_silence=skipped (no speech detected)`);
           } else {
-            if (args.outputDir && !fs.existsSync(args.outputDir)) {
-              fs.mkdirSync(args.outputDir, { recursive: true });
+            if (args.outputDir) {
+              await fsp.mkdir(args.outputDir, { recursive: true });
             }
-            const outputPath = ensureUniquePath(
+            const outputPath = await ensureUniquePath(
               getStripOutputPath(audioPath, args.outputDir),
             );
             const stripT0 = performance.now();
+            const memBefore = process.memoryUsage();
             await writeStrippedAudio(audio, segmentsSeconds, effectiveSampleRate, outputPath);
+            const memAfter = process.memoryUsage();
             const stripT1 = performance.now();
             const strippedSeconds = segmentsSeconds.reduce(
               (sum, seg) => sum + (seg.end - seg.start),
@@ -120,6 +123,13 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
               `strip_silence_output=${outputPath} duration=${strippedSeconds.toFixed(2)}s`,
             );
             console.info(`strip_silence_took=${(stripT1 - stripT0).toFixed(2)}ms`);
+            console.info(
+              [
+                `strip_silence_mem_rss_delta_mb=${toMB(memAfter.rss - memBefore.rss)}`,
+                `strip_silence_mem_heap_delta_mb=${toMB(memAfter.heapUsed - memBefore.heapUsed)}`,
+                `strip_silence_mem_external_delta_mb=${toMB(memAfter.external - memBefore.external)}`,
+              ].join(' '),
+            );
           }
         }
       }
@@ -283,8 +293,10 @@ function getStripOutputPath(inputPath, outputDir) {
   return path.join(dir, `${base}_speech.wav`);
 }
 
-function ensureUniquePath(outputPath) {
-  if (!fs.existsSync(outputPath)) {
+async function ensureUniquePath(outputPath) {
+  try {
+    await fsp.access(outputPath);
+  } catch {
     return outputPath;
   }
   const dir = path.dirname(outputPath);
@@ -292,13 +304,15 @@ function ensureUniquePath(outputPath) {
   const base = path.basename(outputPath, ext);
   for (let i = 1; ; i += 1) {
     const candidate = path.join(dir, `${base}-${i}${ext}`);
-    if (!fs.existsSync(candidate)) {
+    try {
+      await fsp.access(candidate);
+    } catch {
       return candidate;
     }
   }
 }
 
-function writeStrippedAudio(audio, segmentsSeconds, sampleRate, outputPath) {
+async function writeStrippedAudio(audio, segmentsSeconds, sampleRate, outputPath) {
   if (!audio || !audio.length) {
     throw new Error('No audio samples available to write');
   }
@@ -324,10 +338,10 @@ function writeStrippedAudio(audio, segmentsSeconds, sampleRate, outputPath) {
     out.set(audio.subarray(start, end), offset);
     offset += end - start;
   }
-  writeWavFile(outputPath, out, sampleRate);
+  await writeWavFile(outputPath, out, sampleRate);
 }
 
-function writeWavFile(outputPath, samples, sampleRate) {
+async function writeWavFile(outputPath, samples, sampleRate) {
   const numChannels = 1;
   const bitsPerSample = 16;
   const blockAlign = (numChannels * bitsPerSample) / 8;
@@ -357,5 +371,5 @@ function writeWavFile(outputPath, samples, sampleRate) {
     writeOffset += 2;
   }
 
-  fs.writeFileSync(outputPath, buffer);
+  await fsp.writeFile(outputPath, buffer);
 }

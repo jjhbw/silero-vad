@@ -218,7 +218,7 @@ function decodeWithFfmpeg(inputPath, { sampleRate = 16000, channels = 1 } = {}) 
         buffer.byteOffset,
         buffer.byteLength / Float32Array.BYTES_PER_ELEMENT,
       );
-      resolve(new Float32Array(floatData));
+      resolve(floatData);
     });
   });
 }

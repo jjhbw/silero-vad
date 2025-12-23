@@ -11,6 +11,16 @@ const WEIGHTS = {
   op18: { path: path.join(__dirname, 'weights', 'silero_vad_op18_ifless.onnx'), sampleRate: 16000 },
 };
 
+// Bench sweep on long-form audio showed this CPU-only config is the best general default.
+const DEFAULT_SESSION_OPTIONS = {
+  intraOpNumThreads: 4,
+  interOpNumThreads: 1,
+  executionMode: 'sequential',
+  graphOptimizationLevel: 'all',
+  enableCpuMemArena: true,
+  enableMemPattern: true,
+};
+
 // Minimal get_speech_timestamps port that runs the Silero VAD ONNX model in Node.
 class SileroVad {
   constructor(session) {
@@ -68,7 +78,11 @@ class SileroVad {
 async function loadSileroVad(model = 'default', opts = {}) {
   const spec = WEIGHTS[model];
   const modelPath = spec ? spec.path : model || WEIGHTS.default.path;
-  const session = await ort.InferenceSession.create(modelPath, opts.sessionOptions);
+  const sessionOptions = {
+    ...DEFAULT_SESSION_OPTIONS,
+    ...(opts.sessionOptions || {}),
+  };
+  const session = await ort.InferenceSession.create(modelPath, sessionOptions);
   const vad = new SileroVad(session);
   vad.sampleRate = spec ? spec.sampleRate : null;
   return vad;

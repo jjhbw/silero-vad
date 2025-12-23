@@ -161,6 +161,14 @@ async function runBenchmarks({
     await runWarmup({ audioPath, vad, sampleRate, warmup, vadOptions });
   }
 
+  const decodeTimes = [];
+  for (let i = 0; i < runs; i += 1) {
+    const t0 = performance.now();
+    await decodeWithFfmpeg(audioPath, { sampleRate });
+    const t1 = performance.now();
+    decodeTimes.push(t1 - t0);
+  }
+
   const vadTimes = [];
   for (let i = 0; i < runs; i += 1) {
     const t0 = performance.now();
@@ -193,6 +201,7 @@ async function runBenchmarks({
     await fsp.unlink(outputPath);
   }
 
+  printStats('ffmpeg_decode', decodeTimes);
   printStats('file_to_vad', vadTimes);
   printStats('file_to_stripped', stripTimes);
   if (skippedStrip) {

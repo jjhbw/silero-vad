@@ -37,7 +37,7 @@ The sample rate is defined by the selected model (read from `vad.sampleRate`); i
 
 ```bash
 cd js-fork
-node bench.js --audio lanie_speech.wav --runs 5
+node bench.js --audio data/test.mp3 --runs 5
 ```
 
 The benchmark reports two timings per file: file-to-VAD results and file-to-stripped-audio. Stripped-audio files are written to a temporary directory and removed after each run.

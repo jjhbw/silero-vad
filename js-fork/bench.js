@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const fsp = fs.promises;
+const os = require('os');
 const path = require('path');
 const { performance } = require('perf_hooks');
 const { loadSileroVad, decodeWithFfmpeg, getSpeechTimestamps, WEIGHTS } = require('./lib');
@@ -21,7 +22,7 @@ const { loadSileroVad, decodeWithFfmpeg, getSpeechTimestamps, WEIGHTS } = requir
     }
     const effectiveSampleRate = vad.sampleRate;
 
-    const outputDir = await ensureOutputDir(args.outputDir);
+    const outputDir = await ensureOutputDir();
 
     try {
       for (const audioPath of args.audio) {
@@ -30,7 +31,6 @@ const { loadSileroVad, decodeWithFfmpeg, getSpeechTimestamps, WEIGHTS } = requir
           vad,
           sampleRate: effectiveSampleRate,
           outputDir,
-          keepFiles: args.keepFiles,
           runs: args.runs,
           warmup: args.warmup,
           vadOptions: {
@@ -46,9 +46,7 @@ const { loadSileroVad, decodeWithFfmpeg, getSpeechTimestamps, WEIGHTS } = requir
       }
     } finally {
       await vad.session.release?.();
-      if (!args.keepFiles && !args.outputDir) {
-        await fsp.rm(outputDir, { recursive: true, force: true });
-      }
+      await fsp.rm(outputDir, { recursive: true, force: true });
     }
   } catch (err) {
     console.error(err.message || err);
@@ -68,8 +66,6 @@ function parseArgs(argv) {
     speechPadMs: 30,
     timeResolution: 3,
     negThreshold: null,
-    outputDir: null,
-    keepFiles: false,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -125,11 +121,6 @@ function parseArgs(argv) {
         out.negThreshold = value;
       }
       i += 1;
-    } else if (arg === '--output-dir') {
-      out.outputDir = argv[i + 1];
-      i += 1;
-    } else if (arg === '--keep-files') {
-      out.keepFiles = true;
     } else if (arg === '--help' || arg === '-h') {
       printUsage();
       process.exit(0);
@@ -152,8 +143,6 @@ Options:
   --speech-pad-ms <ms>    Padding added to speech segments in ms (default: 30)
   --time-resolution <n>   Decimal places for seconds output (default: 3)
   --neg-threshold <f>     Negative threshold override (default: threshold - 0.15)
-  --output-dir <path>     Output directory for stripped-audio files (default: ./bench-output-*)
-  --keep-files            Keep stripped-audio files when using the default output dir
   -h, --help              Show this message`);
 }
 
@@ -161,8 +150,6 @@ async function runBenchmarks({
   audioPath,
   vad,
   sampleRate,
-  outputDir,
-  keepFiles,
   runs,
   warmup,
   vadOptions,
@@ -203,9 +190,7 @@ async function runBenchmarks({
     await writeStrippedAudio(audio, segments, sampleRate, outputPath);
     const t1 = performance.now();
     stripTimes.push(t1 - t0);
-    if (!keepFiles) {
-      await fsp.unlink(outputPath);
-    }
+    await fsp.unlink(outputPath);
   }
 
   printStats('file_to_vad', vadTimes);
@@ -249,14 +234,8 @@ function calcStats(values) {
   };
 }
 
-async function ensureOutputDir(outputDir) {
-  if (outputDir) {
-    await fsp.mkdir(outputDir, { recursive: true });
-    return outputDir;
-  }
-  const dir = path.join(process.cwd(), `bench-output-${Date.now()}`);
-  await fsp.mkdir(dir, { recursive: true });
-  return dir;
+async function ensureOutputDir() {
+  return fsp.mkdtemp(path.join(os.tmpdir(), 'silero-vad-bench-'));
 }
 
 async function writeStrippedAudio(audio, segmentsSeconds, sampleRate, outputPath) {

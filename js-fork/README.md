@@ -40,7 +40,7 @@ cd js-fork
 node bench.js --audio lanie_speech.wav --runs 5
 ```
 
-The benchmark reports two timings per file: file-to-VAD results and file-to-stripped-audio. Use `--output-dir` to keep outputs or `--keep-files` to preserve files created in the default `bench-output-*` directory.
+The benchmark reports two timings per file: file-to-VAD results and file-to-stripped-audio. Stripped-audio files are written to a temporary directory and removed after each run.
 
 ## Library usage
 

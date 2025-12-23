@@ -26,11 +26,21 @@ Options:
 - `--time-resolution <n>`: decimal places for seconds output (default `3`).
 - `--neg-threshold <float>`: override the negative threshold (default `threshold - 0.15`).
 - `--seconds`: output timestamps in seconds (default on).
+- `--cps <float>`: enable the timeline visualization and set chars per second (default `4`).
 - `--strip-silence`: write a new WAV file with silences removed.
 - `--output-dir <path>`: output directory for strip-silence files (default: input dir).
 
 Outputs an array of `{ file, timestamps }` to stdout as JSON. The CLI reuses a single ONNX session and resets state per file.
 The sample rate is defined by the selected model (read from `vad.sampleRate`); it is not configurable in `getSpeechTimestamps`.
+
+## Benchmark
+
+```bash
+cd js-fork
+node bench.js --audio lanie_speech.wav --runs 5
+```
+
+The benchmark reports two timings per file: file-to-VAD results and file-to-stripped-audio. Use `--output-dir` to keep outputs or `--keep-files` to preserve files created in the default `bench-output-*` directory.
 
 ## Library usage
 

@@ -6,6 +6,7 @@
     "silero-vad-cli": "cli.js"
   },
   "scripts": {
+    "bench": "node bench.js",
     "test": "node --test"
   },
   "author": "",

@@ -53,13 +53,6 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
         const totalForPct = durationSeconds > 0 ? durationSeconds : 1;
         const speechPct = (speechSeconds / totalForPct) * 100;
         const silencePct = (silenceSeconds / totalForPct) * 100;
-        const lines = renderTimelineLines(
-          timestamps,
-          durationSeconds,
-          args.charsPerSecond,
-          120,
-        );
-        const secondsPerChar = 1 / args.charsPerSecond;
         console.info(
           [
             `file=${audioPath}`,
@@ -89,11 +82,21 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
             `external_mb=${toMB(mem.external)}`,
           ].join(' '),
         );
-        console.info(
-          `legend: # speech  . silence  (1 char = ${secondsPerChar.toFixed(2)}s)`,
-        );
-        for (const line of lines) {
-          console.info(line);
+
+        if (args.showTimeline) {
+          const lines = renderTimelineLines(
+            timestamps,
+            durationSeconds,
+            args.charsPerSecond,
+            120,
+          );
+          const secondsPerChar = 1 / args.charsPerSecond;
+          console.info(
+            `legend: # speech  . silence  (1 char = ${secondsPerChar.toFixed(2)}s)`,
+          );
+          for (const line of lines) {
+            console.info(line);
+          }
         }
 
         if (args.stripSilence) {
@@ -155,6 +158,7 @@ function parseArgs(argv) {
     negThreshold: null,
     seconds: true,
     charsPerSecond: 4,
+    showTimeline: false,
     stripSilence: false,
     outputDir: null,
   };
@@ -204,6 +208,7 @@ function parseArgs(argv) {
       out.seconds = true;
     } else if (arg === '--cps') {
       const value = parseFloat(argv[i + 1]);
+      out.showTimeline = true;
       if (Number.isFinite(value) && value > 0) {
         out.charsPerSecond = value;
       }
@@ -234,7 +239,7 @@ Options:
   --time-resolution <n>  Decimal places for seconds output (default: 3)
   --neg-threshold <f>    Negative threshold override (default: threshold - 0.15)
   --seconds              Output timestamps in seconds (default: on)
-  --cps <float>          Timeline chars per second (default: 4)
+  --cps <float>          Enable timeline visualization; chars per second (default: 4)
   --strip-silence         Write a new file with all silences removed
   --output-dir <path>     Output directory for strip-silence files (default: input dir)
   -h, --help             Show this message`);

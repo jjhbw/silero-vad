@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const ort = require('onnxruntime-node');
@@ -191,6 +192,15 @@ async function getSpeechTimestamps(
 function decodeWithFfmpeg(inputPath, { sampleRate } = {}) {
   if (!sampleRate) {
     throw new Error('decodeWithFfmpeg: sampleRate is required');
+  }
+  let stat;
+  try {
+    stat = fs.statSync(inputPath);
+  } catch {
+    throw new Error(`Audio file not found: ${inputPath}`);
+  }
+  if (!stat.isFile()) {
+    throw new Error(`Audio path is not a file: ${inputPath}`);
   }
   return new Promise((resolve, reject) => {
     const channels = 1; // mono

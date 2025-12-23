@@ -150,6 +150,7 @@ async function runBenchmarks({
   audioPath,
   vad,
   sampleRate,
+  outputDir,
   runs,
   warmup,
   vadOptions,

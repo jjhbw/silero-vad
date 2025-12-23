@@ -6,7 +6,7 @@
     "silero-vad-cli": "cli.js"
   },
   "scripts": {
-    "bench": "node bench.js --audio data/long.mp3 --runs 1",
+    "bench": "node bench.js --audio data/long.mp3 --runs 3 --warmup 1",
     "test": "node --test"
   },
   "author": "",

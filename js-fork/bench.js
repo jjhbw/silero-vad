@@ -239,12 +239,16 @@ async function runBenchmarks({
     await runWarmup({ audioPath, vad, sampleRate, warmup, vadOptions });
   }
 
+  const memStats = createMemStats();
+  recordMemoryUsage(memStats);
+
   const decodeTimes = [];
   for (let i = 0; i < runs; i += 1) {
     const t0 = performance.now();
     await decodeWithFfmpeg(audioPath, { sampleRate });
     const t1 = performance.now();
     decodeTimes.push(t1 - t0);
+    recordMemoryUsage(memStats);
   }
 
   const vadTimes = [];
@@ -254,6 +258,7 @@ async function runBenchmarks({
     await getSpeechTimestamps(audio, vad, vadOptions);
     const t1 = performance.now();
     vadTimes.push(t1 - t0);
+    recordMemoryUsage(memStats);
   }
 
   const stripTimes = [];
@@ -277,6 +282,7 @@ async function runBenchmarks({
     const t1 = performance.now();
     stripTimes.push(t1 - t0);
     await fsp.unlink(outputPath);
+    recordMemoryUsage(memStats);
   }
 
   printStats('ffmpeg_decode', decodeTimes);
@@ -287,6 +293,21 @@ async function runBenchmarks({
   }
   const e2eMs = performance.now() - e2eStart;
   console.info(`end_to_end_ms total=${e2eMs.toFixed(2)}`);
+  const mem = process.memoryUsage();
+  console.info(
+    [
+      `mem_rss_mb=${toMB(mem.rss)}`,
+      `mem_heapUsed_mb=${toMB(mem.heapUsed)}`,
+      `mem_external_mb=${toMB(mem.external)}`,
+    ].join(' '),
+  );
+  console.info(
+    [
+      `mem_rss_peak_mb=${toMB(memStats.maxRss)}`,
+      `mem_heapUsed_peak_mb=${toMB(memStats.maxHeapUsed)}`,
+      `mem_external_peak_mb=${toMB(memStats.maxExternal)}`,
+    ].join(' '),
+  );
   console.info('');
 }
 
@@ -319,6 +340,26 @@ function calcStats(values) {
     min,
     max,
   };
+}
+
+function toMB(bytes) {
+  return (bytes / (1024 * 1024)).toFixed(2);
+}
+
+function createMemStats() {
+  return {
+    maxRss: 0,
+    maxHeapUsed: 0,
+    maxExternal: 0,
+  };
+}
+
+function recordMemoryUsage(stats) {
+  const mem = process.memoryUsage();
+  stats.maxRss = Math.max(stats.maxRss, mem.rss);
+  stats.maxHeapUsed = Math.max(stats.maxHeapUsed, mem.heapUsed);
+  stats.maxExternal = Math.max(stats.maxExternal, mem.external);
+  return mem;
 }
 
 async function ensureOutputDir() {

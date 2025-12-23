@@ -167,6 +167,7 @@ async function runBenchmarks({
   warmup,
   vadOptions,
 }) {
+  const e2eStart = performance.now();
   console.info(`file=${audioPath}`);
   console.info(`model_sample_rate=${sampleRate}`);
   if (warmup > 0) {
@@ -212,6 +213,8 @@ async function runBenchmarks({
   if (skippedStrip) {
     console.info(`strip_skipped=${skippedStrip} (no speech detected)`);
   }
+  const e2eMs = performance.now() - e2eStart;
+  console.info(`end_to_end_ms total=${e2eMs.toFixed(2)}`);
   console.info('');
 }
 

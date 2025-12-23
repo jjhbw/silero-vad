@@ -16,7 +16,11 @@ const { loadSileroVad, decodeWithFfmpeg, getSpeechTimestamps, WEIGHTS } = requir
     }
 
     const modelSpecifier = args.model || 'default';
-    const vad = await loadSileroVad(modelSpecifier);
+    const sessionOptions = buildSessionOptions(args);
+    const vad = await loadSileroVad(
+      modelSpecifier,
+      sessionOptions ? { sessionOptions } : undefined,
+    );
     if (!vad.sampleRate) {
       throw new Error('No sample rate available for selected model. Please use a bundled model key.');
     }
@@ -66,6 +70,12 @@ function parseArgs(argv) {
     speechPadMs: 30,
     timeResolution: 3,
     negThreshold: null,
+    intraOpNumThreads: null,
+    interOpNumThreads: null,
+    executionMode: null,
+    graphOptimizationLevel: null,
+    enableCpuMemArena: null,
+    enableMemPattern: null,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -121,6 +131,30 @@ function parseArgs(argv) {
         out.negThreshold = value;
       }
       i += 1;
+    } else if (arg === '--intra-threads') {
+      const value = parseInt(argv[i + 1], 10);
+      if (Number.isFinite(value)) {
+        out.intraOpNumThreads = value;
+      }
+      i += 1;
+    } else if (arg === '--inter-threads') {
+      const value = parseInt(argv[i + 1], 10);
+      if (Number.isFinite(value)) {
+        out.interOpNumThreads = value;
+      }
+      i += 1;
+    } else if (arg === '--execution-mode') {
+      out.executionMode = argv[i + 1];
+      i += 1;
+    } else if (arg === '--graph-opt') {
+      out.graphOptimizationLevel = argv[i + 1];
+      i += 1;
+    } else if (arg === '--enable-cpu-mem-arena') {
+      out.enableCpuMemArena = parseBool(argv[i + 1]);
+      i += 1;
+    } else if (arg === '--enable-mem-pattern') {
+      out.enableMemPattern = parseBool(argv[i + 1]);
+      i += 1;
     } else if (arg === '--help' || arg === '-h') {
       printUsage();
       process.exit(0);
@@ -143,7 +177,50 @@ Options:
   --speech-pad-ms <ms>    Padding added to speech segments in ms (default: 30)
   --time-resolution <n>   Decimal places for seconds output (default: 3)
   --neg-threshold <f>     Negative threshold override (default: threshold - 0.15)
+  --intra-threads <n>     ORT intra-op thread count
+  --inter-threads <n>     ORT inter-op thread count
+  --execution-mode <m>    ORT execution mode: sequential | parallel
+  --graph-opt <level>     ORT graph optimization: disabled | basic | extended | layout | all
+  --enable-cpu-mem-arena <bool>  ORT CPU memory arena on/off
+  --enable-mem-pattern <bool>    ORT memory pattern on/off
   -h, --help              Show this message`);
+}
+
+function parseBool(value) {
+  if (value === undefined) {
+    return null;
+  }
+  const normalized = String(value).toLowerCase();
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+    return false;
+  }
+  return null;
+}
+
+function buildSessionOptions(args) {
+  const sessionOptions = {};
+  if (Number.isFinite(args.intraOpNumThreads)) {
+    sessionOptions.intraOpNumThreads = args.intraOpNumThreads;
+  }
+  if (Number.isFinite(args.interOpNumThreads)) {
+    sessionOptions.interOpNumThreads = args.interOpNumThreads;
+  }
+  if (args.executionMode) {
+    sessionOptions.executionMode = args.executionMode;
+  }
+  if (args.graphOptimizationLevel) {
+    sessionOptions.graphOptimizationLevel = args.graphOptimizationLevel;
+  }
+  if (args.enableCpuMemArena !== null) {
+    sessionOptions.enableCpuMemArena = args.enableCpuMemArena;
+  }
+  if (args.enableMemPattern !== null) {
+    sessionOptions.enableMemPattern = args.enableMemPattern;
+  }
+  return Object.keys(sessionOptions).length ? sessionOptions : null;
 }
 
 async function runBenchmarks({

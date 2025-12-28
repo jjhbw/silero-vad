@@ -3,7 +3,12 @@
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
-const { loadSileroVad, getSpeechTimestamps, decodeWithFfmpeg, WEIGHTS } = require('./lib');
+const {
+  loadSileroVad,
+  getSpeechTimestampsFromFfmpeg,
+  writeStrippedAudioWithFfmpeg,
+  WEIGHTS,
+} = require('./lib');
 
 const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
 
@@ -28,9 +33,7 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
         // reuse session, reset stream state per file
         vad.resetStates();
         const t0 = performance.now();
-        const audio = await decodeWithFfmpeg(audioPath, { sampleRate: effectiveSampleRate });
-        const t1 = performance.now();
-        const timestamps = await getSpeechTimestamps(audio, vad, {
+        const { timestamps, totalSamples } = await getSpeechTimestampsFromFfmpeg(audioPath, vad, {
           threshold: args.threshold,
           minSpeechDurationMs: args.minSpeechDurationMs,
           minSilenceDurationMs: args.minSilenceDurationMs,
@@ -38,8 +41,9 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
           returnSeconds: args.seconds,
           timeResolution: args.timeResolution,
           negThreshold: args.negThreshold,
+          returnMetadata: true,
         });
-        const t2 = performance.now();
+        const t1 = performance.now();
         results.push({ file: audioPath, timestamps });
 
         const mem = process.memoryUsage();
@@ -48,7 +52,7 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
           args.seconds,
           effectiveSampleRate,
         );
-        const durationSeconds = audio.length / effectiveSampleRate;
+        const durationSeconds = totalSamples / effectiveSampleRate;
         const silenceSeconds = Math.max(0, durationSeconds - speechSeconds);
         const totalForPct = durationSeconds > 0 ? durationSeconds : 1;
         const speechPct = (speechSeconds / totalForPct) * 100;
@@ -59,21 +63,16 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
             `duration=${formatDuration(durationSeconds)}`,
           ].join(' '),
         );
-        console.info([
-          `speech=${speechSeconds.toFixed(2)}s (${speechPct.toFixed(1)}%)`,
-          `silence=${silenceSeconds.toFixed(2)}s (${silencePct.toFixed(1)}%)`, ,
-          `total=${durationSeconds.toFixed(2)}s`
-        ].join(' ')
-        );
-        const totalMs = t2 - t0;
-        const totalForPctMs = totalMs > 0 ? totalMs : 1;
-        const decodePct = ((t1 - t0) / totalForPctMs) * 100;
-        const vadPct = ((t2 - t1) / totalForPctMs) * 100;
         console.info(
           [
-            `decode_took=${(t1 - t0).toFixed(2)} (${decodePct.toFixed(1)}%)`,
-            `vad_took=${(t2 - t1).toFixed(2)} (${vadPct.toFixed(1)}%)`,
+            `speech=${speechSeconds.toFixed(2)}s (${speechPct.toFixed(1)}%)`,
+            `silence=${silenceSeconds.toFixed(2)}s (${silencePct.toFixed(1)}%)`,
+            `total=${durationSeconds.toFixed(2)}s`,
           ].join(' '),
+        );
+        const totalMs = t1 - t0;
+        console.info(
+          `vad_took=${totalMs.toFixed(2)}ms`,
         );
         console.info(
           [
@@ -115,7 +114,12 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
             );
             const stripT0 = performance.now();
             const memBefore = process.memoryUsage();
-            await writeStrippedAudio(audio, segmentsSeconds, effectiveSampleRate, outputPath);
+            await writeStrippedAudioWithFfmpeg(
+              audioPath,
+              segmentsSeconds,
+              effectiveSampleRate,
+              outputPath,
+            );
             const memAfter = process.memoryUsage();
             const stripT1 = performance.now();
             const strippedSeconds = segmentsSeconds.reduce(
@@ -315,66 +319,4 @@ async function ensureUniquePath(outputPath) {
       return candidate;
     }
   }
-}
-
-async function writeStrippedAudio(audio, segmentsSeconds, sampleRate, outputPath) {
-  if (!audio || !audio.length) {
-    throw new Error('No audio samples available to write');
-  }
-  if (!sampleRate) {
-    throw new Error('Sample rate is required to write WAV');
-  }
-  const ranges = segmentsSeconds
-    .map(({ start, end }) => ({
-      start: Math.max(0, Math.floor(start * sampleRate)),
-      end: Math.min(audio.length, Math.floor(end * sampleRate)),
-    }))
-    .filter(({ start, end }) => end > start);
-  if (!ranges.length) {
-    throw new Error('No valid speech segments to write');
-  }
-  let totalSamples = 0;
-  for (const { start, end } of ranges) {
-    totalSamples += end - start;
-  }
-  const out = new Float32Array(totalSamples);
-  let offset = 0;
-  for (const { start, end } of ranges) {
-    out.set(audio.subarray(start, end), offset);
-    offset += end - start;
-  }
-  await writeWavFile(outputPath, out, sampleRate);
-}
-
-async function writeWavFile(outputPath, samples, sampleRate) {
-  const numChannels = 1;
-  const bitsPerSample = 16;
-  const blockAlign = (numChannels * bitsPerSample) / 8;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = samples.length * 2;
-  const buffer = Buffer.alloc(44 + dataSize);
-
-  buffer.write('RIFF', 0);
-  buffer.writeUInt32LE(36 + dataSize, 4);
-  buffer.write('WAVE', 8);
-  buffer.write('fmt ', 12);
-  buffer.writeUInt32LE(16, 16);
-  buffer.writeUInt16LE(1, 20);
-  buffer.writeUInt16LE(numChannels, 22);
-  buffer.writeUInt32LE(sampleRate, 24);
-  buffer.writeUInt32LE(byteRate, 28);
-  buffer.writeUInt16LE(blockAlign, 32);
-  buffer.writeUInt16LE(bitsPerSample, 34);
-  buffer.write('data', 36);
-  buffer.writeUInt32LE(dataSize, 40);
-
-  let writeOffset = 44;
-  for (let i = 0; i < samples.length; i += 1) {
-    const clamped = Math.max(-1, Math.min(1, samples[i]));
-    const int16 = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
-    buffer.writeInt16LE(Math.round(int16), writeOffset);
-    writeOffset += 2;
-  }
-
-  await fsp.writeFile(outputPath, buffer);
 }

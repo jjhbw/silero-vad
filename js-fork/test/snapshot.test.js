@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
 
-const { decodeWithFfmpeg, getSpeechTimestamps, loadSileroVad } = require('..');
+const { getSpeechTimestampsFromFfmpeg, loadSileroVad } = require('..');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SNAPSHOT_DIR = path.join(ROOT, 'tests', 'snapshots');
@@ -15,6 +15,16 @@ function readSnapshot(name) {
   return JSON.parse(raw);
 }
 
+function assertTimestampsClose(actual, expected, tolerance, label) {
+  assert.strictEqual(actual.length, expected.length, `${label} length mismatch`);
+  for (let i = 0; i < actual.length; i += 1) {
+    const a = actual[i];
+    const e = expected[i];
+    assert.ok(Math.abs(a.start - e.start) <= tolerance, `${label} start mismatch at ${i}`);
+    assert.ok(Math.abs(a.end - e.end) <= tolerance, `${label} end mismatch at ${i}`);
+  }
+}
+
 test('onnx snapshot matches python ground truth', async () => {
   const snapshot = readSnapshot('onnx.json');
   const vad = await loadSileroVad('default');
@@ -23,8 +33,7 @@ test('onnx snapshot matches python ground truth', async () => {
     await test(`file ${entry.file}`, async () => {
       vad.resetStates();
       const wavPath = path.join(DATA_DIR, entry.file);
-      const audio = await decodeWithFfmpeg(wavPath, { sampleRate: vad.sampleRate });
-      const ts = await getSpeechTimestamps(audio, vad, {
+      const ts = await getSpeechTimestampsFromFfmpeg(wavPath, vad, {
         threshold: 0.5,
         returnSeconds: true,
         timeResolution: 3,
@@ -35,13 +44,7 @@ test('onnx snapshot matches python ground truth', async () => {
       if (entry.file === 'test.mp3') {
         // MP3 decoding in Node (ffmpeg) vs Python (torchaudio) can differ by encoder delay/padding,
         // so allow a small tolerance instead of strict equality.
-        assert.strictEqual(plainTs.length, entry.speech_timestamps.length);
-        for (let i = 0; i < plainTs.length; i += 1) {
-          const a = plainTs[i];
-          const e = entry.speech_timestamps[i];
-          assert.ok(Math.abs(a.start - e.start) <= 0.1, `start mismatch for ${entry.file}`);
-          assert.ok(Math.abs(a.end - e.end) <= 0.1, `end mismatch for ${entry.file}`);
-        }
+        assertTimestampsClose(plainTs, entry.speech_timestamps, 0.1, entry.file);
       } else {
         assert.deepStrictEqual(plainTs, entry.speech_timestamps);
       }

@@ -117,16 +117,6 @@ async function getSpeechTimestamps(
     throw new Error('Supported sampling rates: 8000 or 16000 (or a multiple of 16000).');
   }
 
-  let stat;
-  try {
-    stat = fs.statSync(inputPath);
-  } catch {
-    throw new Error(`Audio file not found: ${inputPath}`);
-  }
-  if (!stat.isFile()) {
-    throw new Error(`Audio path is not a file: ${inputPath}`);
-  }
-
   const windowSize = sr === 16000 ? 512 : 256;
   const minSpeechSamples = (sr * minSpeechDurationMs) / 1000;
   const minSilenceSamples = (sr * minSilenceDurationMs) / 1000;

@@ -5,7 +5,14 @@ const fsp = fs.promises;
 const os = require('os');
 const path = require('path');
 const { performance } = require('perf_hooks');
-const { loadSileroVad, decodeWithFfmpeg, getSpeechTimestamps, WEIGHTS } = require('./lib');
+const {
+  loadSileroVad,
+  decodeWithFfmpeg,
+  getSpeechTimestamps,
+  getSpeechTimestampsFromFfmpeg,
+  writeStrippedAudioWithFfmpeg,
+  WEIGHTS,
+} = require('./lib');
 
 (async () => {
   try {
@@ -46,6 +53,7 @@ const { loadSileroVad, decodeWithFfmpeg, getSpeechTimestamps, WEIGHTS } = requir
             timeResolution: args.timeResolution,
             negThreshold: args.negThreshold,
           },
+          streaming: args.streaming,
         });
       }
     } finally {
@@ -70,6 +78,7 @@ function parseArgs(argv) {
     speechPadMs: 30,
     timeResolution: 3,
     negThreshold: null,
+    streaming: false,
     intraOpNumThreads: null,
     interOpNumThreads: null,
     executionMode: null,
@@ -131,6 +140,8 @@ function parseArgs(argv) {
         out.negThreshold = value;
       }
       i += 1;
+    } else if (arg === '--streaming') {
+      out.streaming = true;
     } else if (arg === '--intra-threads') {
       const value = parseInt(argv[i + 1], 10);
       if (Number.isFinite(value)) {
@@ -177,6 +188,7 @@ Options:
   --speech-pad-ms <ms>    Padding added to speech segments in ms (default: 30)
   --time-resolution <n>   Decimal places for seconds output (default: 3)
   --neg-threshold <f>     Negative threshold override (default: threshold - 0.15)
+  --streaming             Use ffmpeg streaming decode for VAD/strip benchmarks
   --intra-threads <n>     ORT intra-op thread count
   --inter-threads <n>     ORT inter-op thread count
   --execution-mode <m>    ORT execution mode: sequential | parallel
@@ -231,12 +243,13 @@ async function runBenchmarks({
   runs,
   warmup,
   vadOptions,
+  streaming,
 }) {
   const e2eStart = performance.now();
   console.info(`file=${audioPath}`);
   console.info(`model_sample_rate=${sampleRate}`);
   if (warmup > 0) {
-    await runWarmup({ audioPath, vad, sampleRate, warmup, vadOptions });
+    await runWarmup({ audioPath, vad, sampleRate, warmup, vadOptions, streaming });
   }
 
   const memStats = createMemStats();
@@ -254,8 +267,12 @@ async function runBenchmarks({
   const vadTimes = [];
   for (let i = 0; i < runs; i += 1) {
     const t0 = performance.now();
-    const audio = await decodeWithFfmpeg(audioPath, { sampleRate });
-    await getSpeechTimestamps(audio, vad, vadOptions);
+    if (streaming) {
+      await getSpeechTimestampsFromFfmpeg(audioPath, vad, vadOptions);
+    } else {
+      const audio = await decodeWithFfmpeg(audioPath, { sampleRate });
+      await getSpeechTimestamps(audio, vad, vadOptions);
+    }
     const t1 = performance.now();
     vadTimes.push(t1 - t0);
     recordMemoryUsage(memStats);
@@ -265,23 +282,42 @@ async function runBenchmarks({
   let skippedStrip = 0;
   for (let i = 0; i < runs; i += 1) {
     const t0 = performance.now();
-    const audio = await decodeWithFfmpeg(audioPath, { sampleRate });
-    const timestamps = await getSpeechTimestamps(audio, vad, vadOptions);
-    const segments = timestamps.map(({ start, end }) => ({ start, end }));
-    if (!segments.length) {
-      skippedStrip += 1;
-      const t1 = performance.now();
-      stripTimes.push(t1 - t0);
-      continue;
+    let outputPath = null;
+    if (streaming) {
+      const timestamps = await getSpeechTimestampsFromFfmpeg(audioPath, vad, vadOptions);
+      const segments = timestamps.map(({ start, end }) => ({ start, end }));
+      if (!segments.length) {
+        skippedStrip += 1;
+        const t1 = performance.now();
+        stripTimes.push(t1 - t0);
+        continue;
+      }
+      outputPath = path.join(
+        outputDir,
+        `${path.basename(audioPath, path.extname(audioPath))}_speech_${i + 1}.wav`,
+      );
+      await writeStrippedAudioWithFfmpeg(audioPath, segments, sampleRate, outputPath);
+    } else {
+      const audio = await decodeWithFfmpeg(audioPath, { sampleRate });
+      const timestamps = await getSpeechTimestamps(audio, vad, vadOptions);
+      const segments = timestamps.map(({ start, end }) => ({ start, end }));
+      if (!segments.length) {
+        skippedStrip += 1;
+        const t1 = performance.now();
+        stripTimes.push(t1 - t0);
+        continue;
+      }
+      outputPath = path.join(
+        outputDir,
+        `${path.basename(audioPath, path.extname(audioPath))}_speech_${i + 1}.wav`,
+      );
+      await writeStrippedAudio(audio, segments, sampleRate, outputPath);
     }
-    const outputPath = path.join(
-      outputDir,
-      `${path.basename(audioPath, path.extname(audioPath))}_speech_${i + 1}.wav`,
-    );
-    await writeStrippedAudio(audio, segments, sampleRate, outputPath);
     const t1 = performance.now();
     stripTimes.push(t1 - t0);
-    await fsp.unlink(outputPath);
+    if (outputPath) {
+      await fsp.unlink(outputPath);
+    }
     recordMemoryUsage(memStats);
   }
 
@@ -311,10 +347,14 @@ async function runBenchmarks({
   console.info('');
 }
 
-async function runWarmup({ audioPath, vad, sampleRate, warmup, vadOptions }) {
+async function runWarmup({ audioPath, vad, sampleRate, warmup, vadOptions, streaming }) {
   for (let i = 0; i < warmup; i += 1) {
-    const audio = await decodeWithFfmpeg(audioPath, { sampleRate });
-    await getSpeechTimestamps(audio, vad, vadOptions);
+    if (streaming) {
+      await getSpeechTimestampsFromFfmpeg(audioPath, vad, vadOptions);
+    } else {
+      const audio = await decodeWithFfmpeg(audioPath, { sampleRate });
+      await getSpeechTimestamps(audio, vad, vadOptions);
+    }
   }
 }
 

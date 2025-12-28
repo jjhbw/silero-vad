@@ -1,4 +1,5 @@
 const fs = require('fs');
+const fsp = fs.promises;
 const path = require('path');
 const { spawn } = require('child_process');
 const ort = require('onnxruntime-node');
@@ -202,6 +203,244 @@ async function getSpeechTimestamps(
   }));
 }
 
+async function getSpeechTimestampsFromFfmpeg(
+  inputPath,
+  vad,
+  {
+    threshold = 0.5,
+    minSpeechDurationMs = 250,
+    minSilenceDurationMs = 100,
+    speechPadMs = 30,
+    returnSeconds = false,
+    timeResolution = 1,
+    negThreshold,
+    sampleRate,
+  } = {},
+) {
+  if (!vad) {
+    throw new Error('Pass a loaded SileroVad instance');
+  }
+
+  const sr = sampleRate || vad.sampleRate;
+  if (!sr) {
+    throw new Error('VAD sample rate is undefined. Use a bundled model key.');
+  }
+
+  if (sr !== 8000 && sr !== 16000) {
+    throw new Error('Supported sampling rates: 8000 or 16000 (or a multiple of 16000).');
+  }
+
+  let stat;
+  try {
+    stat = fs.statSync(inputPath);
+  } catch {
+    throw new Error(`Audio file not found: ${inputPath}`);
+  }
+  if (!stat.isFile()) {
+    throw new Error(`Audio path is not a file: ${inputPath}`);
+  }
+
+  const windowSize = sr === 16000 ? 512 : 256;
+  const minSpeechSamples = (sr * minSpeechDurationMs) / 1000;
+  const minSilenceSamples = (sr * minSilenceDurationMs) / 1000;
+  const speechPadSamples = (sr * speechPadMs) / 1000;
+  const negThres = negThreshold ?? Math.max(threshold - 0.15, 0.01);
+
+  vad.resetStates();
+
+  let triggered = false;
+  let tempEnd = 0;
+  let currentSpeech = {};
+  const speeches = [];
+  let processedSamples = 0;
+  let totalSamples = 0;
+  let leftover = Buffer.alloc(0);
+
+  const channels = 1;
+  const args = [
+    '-v',
+    'error',
+    '-i',
+    inputPath,
+    '-ac',
+    String(channels),
+    '-ar',
+    String(sr),
+    '-f',
+    'f32le',
+    'pipe:1',
+  ];
+  const ffmpeg = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'inherit'] });
+
+  const processFrame = async (frame, curSample) => {
+    const speechProb = await vad.processChunk(frame, sr);
+    if (speechProb >= threshold && tempEnd) {
+      tempEnd = 0;
+    }
+
+    if (speechProb >= threshold && !triggered) {
+      triggered = true;
+      currentSpeech.start = curSample;
+      return;
+    }
+
+    if (speechProb < negThres && triggered) {
+      if (!tempEnd) {
+        tempEnd = curSample;
+      }
+      if (curSample - tempEnd < minSilenceSamples) {
+        return;
+      }
+
+      currentSpeech.end = tempEnd;
+      if (currentSpeech.end - currentSpeech.start > minSpeechSamples) {
+        speeches.push(currentSpeech);
+      }
+      currentSpeech = {};
+      triggered = false;
+      tempEnd = 0;
+    }
+  };
+
+  await new Promise((resolve, reject) => {
+    ffmpeg.on('error', reject);
+    ffmpeg.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffmpeg exited with code ${code}`));
+      } else {
+        resolve();
+      }
+    });
+
+    (async () => {
+      try {
+        for await (const chunk of ffmpeg.stdout) {
+          const data = leftover.length ? Buffer.concat([leftover, chunk]) : chunk;
+          const usableBytes = data.length - (data.length % 4);
+          if (usableBytes > 0) {
+            const floatData = new Float32Array(
+              data.buffer,
+              data.byteOffset,
+              usableBytes / Float32Array.BYTES_PER_ELEMENT,
+            );
+            totalSamples += floatData.length;
+            let offset = 0;
+            while (offset + windowSize <= floatData.length) {
+              const frame = floatData.subarray(offset, offset + windowSize);
+              const curSample = processedSamples;
+              processedSamples += windowSize;
+              await processFrame(frame, curSample);
+              offset += windowSize;
+            }
+            const remainingSamples = floatData.length - offset;
+            if (remainingSamples > 0) {
+              leftover = Buffer.from(
+                data.buffer,
+                data.byteOffset + offset * Float32Array.BYTES_PER_ELEMENT,
+                remainingSamples * Float32Array.BYTES_PER_ELEMENT,
+              );
+            } else {
+              leftover = Buffer.alloc(0);
+            }
+          } else {
+            leftover = data;
+          }
+        }
+      } catch (err) {
+        reject(err);
+      }
+    })();
+  });
+
+  if (leftover.length) {
+    const remaining = new Float32Array(
+      leftover.buffer,
+      leftover.byteOffset,
+      leftover.length / Float32Array.BYTES_PER_ELEMENT,
+    );
+    totalSamples += remaining.length;
+    const padded = new Float32Array(windowSize);
+    padded.set(remaining);
+    const curSample = processedSamples;
+    await processFrame(padded, curSample);
+    processedSamples += windowSize;
+  }
+
+  if (currentSpeech.start !== undefined) {
+    currentSpeech.end = totalSamples;
+    if (currentSpeech.end - currentSpeech.start > minSpeechSamples) {
+      speeches.push(currentSpeech);
+    }
+  }
+
+  for (let idx = 0; idx < speeches.length; idx += 1) {
+    const speech = speeches[idx];
+    const prevEnd = idx === 0 ? 0 : speeches[idx - 1].end;
+    const nextStart = idx === speeches.length - 1 ? totalSamples : speeches[idx + 1].start;
+    const padStart = Math.max(speech.start - speechPadSamples, prevEnd);
+    const padEnd = Math.min(speech.end + speechPadSamples, nextStart);
+    speech.start = Math.max(0, Math.floor(padStart));
+    speech.end = Math.min(totalSamples, Math.floor(padEnd));
+  }
+
+  const convertSeconds = (samples) => +(samples / sr).toFixed(timeResolution);
+  if (returnSeconds) {
+    return speeches.map(({ start, end }) => ({
+      start: convertSeconds(start),
+      end: convertSeconds(end),
+      startSample: start,
+      endSample: end,
+    }));
+  }
+
+  return speeches.map(({ start, end }) => ({
+    start,
+    end,
+    startSeconds: convertSeconds(start),
+    endSeconds: convertSeconds(end),
+  }));
+}
+
+async function writeStrippedAudioWithFfmpeg(inputPath, segmentsSeconds, sampleRate, outputPath) {
+  if (!segmentsSeconds || !segmentsSeconds.length) {
+    throw new Error('No valid speech segments to write');
+  }
+  if (!sampleRate) {
+    throw new Error('Sample rate is required to write WAV');
+  }
+  const expr = segmentsSeconds
+    .map(({ start, end }) => `between(t\\,${start.toFixed(6)}\\,${end.toFixed(6)})`)
+    .join('+');
+  const filter = `aselect='${expr}',asetpts=N/SR/TB`;
+
+  const args = [
+    '-y',
+    '-v',
+    'error',
+    '-i',
+    inputPath,
+    '-af',
+    filter,
+    '-ac',
+    '1',
+    '-ar',
+    String(sampleRate),
+    outputPath,
+  ];
+
+  await new Promise((resolve, reject) => {
+    const ffmpeg = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'inherit'] });
+    ffmpeg.on('error', reject);
+    ffmpeg.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffmpeg exited with code ${code}`));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
 // Decode arbitrary audio with ffmpeg into mono, float32 PCM for the VAD.
 function decodeWithFfmpeg(inputPath, { sampleRate } = {}) {
   if (!sampleRate) {
@@ -255,6 +494,8 @@ function decodeWithFfmpeg(inputPath, { sampleRate } = {}) {
 module.exports = {
   loadSileroVad,
   getSpeechTimestamps,
+  getSpeechTimestampsFromFfmpeg,
+  writeStrippedAudioWithFfmpeg,
   decodeWithFfmpeg,
   WEIGHTS,
 };

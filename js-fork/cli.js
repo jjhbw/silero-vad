@@ -173,10 +173,18 @@ function parseArgs(argv) {
       out.model = argv[i + 1];
       i += 1;
     } else if (arg === '--audio') {
-      out.audio.push(argv[i + 1]);
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error('Missing value for --audio');
+      }
+      out.audio.push(value);
       i += 1;
     } else if (arg === '--threshold') {
-      out.threshold = parseFloat(argv[i + 1]);
+      const value = parseFloat(argv[i + 1]);
+      if (!Number.isFinite(value)) {
+        throw new Error('Invalid value for --threshold');
+      }
+      out.threshold = value;
       i += 1;
     } else if (arg === '--min-speech-ms') {
       const value = parseFloat(argv[i + 1]);
@@ -277,10 +285,10 @@ function renderTimelineLines(timestamps, durationSeconds, charsPerSecond, maxLin
 
 function getSpeechDurationSeconds(timestamps, timestampsInSeconds, sampleRate) {
   if (!timestamps || !timestamps.length) {
-    new Error("Need timestamps")
+    return 0;
   }
-  if (!sampleRate) {
-    new Error("Need sampleRate")
+  if (!timestampsInSeconds && !sampleRate) {
+    throw new Error("Need sampleRate");
   }
   if (timestampsInSeconds) {
     return timestamps.reduce((sum, { start, end }) => sum + (end - start), 0);

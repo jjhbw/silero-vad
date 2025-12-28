@@ -256,12 +256,14 @@ async function runBenchmarks({
   recordMemoryUsage(memStats);
 
   const decodeTimes = [];
-  for (let i = 0; i < runs; i += 1) {
-    const t0 = performance.now();
-    await decodeWithFfmpeg(audioPath, { sampleRate });
-    const t1 = performance.now();
-    decodeTimes.push(t1 - t0);
-    recordMemoryUsage(memStats);
+  if (!streaming) {
+    for (let i = 0; i < runs; i += 1) {
+      const t0 = performance.now();
+      await decodeWithFfmpeg(audioPath, { sampleRate });
+      const t1 = performance.now();
+      decodeTimes.push(t1 - t0);
+      recordMemoryUsage(memStats);
+    }
   }
 
   const vadTimes = [];
@@ -321,7 +323,11 @@ async function runBenchmarks({
     recordMemoryUsage(memStats);
   }
 
-  printStats('ffmpeg_decode', decodeTimes);
+  if (!streaming) {
+    printStats('ffmpeg_decode', decodeTimes);
+  } else {
+    console.info('ffmpeg_decode_ms skipped (streaming mode)');
+  }
   printStats('file_to_vad', vadTimes);
   printStats('file_to_stripped', stripTimes);
   if (skippedStrip) {

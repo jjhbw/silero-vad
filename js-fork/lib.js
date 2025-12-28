@@ -26,6 +26,7 @@ const DEFAULT_SESSION_OPTIONS = {
 class SileroVad {
   constructor(session) {
     this.session = session;
+    this.outputNames = session.outputNames;
     this.resetStates();
   }
 
@@ -33,6 +34,9 @@ class SileroVad {
     this.state = new Float32Array(2 * 1 * 128); // shape: [2, 1, 128]
     this.context = null;
     this.lastSr = null;
+    this.contextSize = null;
+    this.inputWithContext = null;
+    this.srTensor = null;
   }
 
   async processChunk(chunk, sampleRate) {
@@ -49,27 +53,29 @@ class SileroVad {
       this.resetStates();
     }
 
-    if (!this.context) {
+    if (!this.context || this.contextSize !== contextSize) {
+      this.contextSize = contextSize;
       this.context = new Float32Array(contextSize); // zeros
+      this.inputWithContext = new Float32Array(contextSize + windowSize);
+      this.srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]));
     }
 
-    const inputWithContext = new Float32Array(contextSize + windowSize);
+    const inputWithContext = this.inputWithContext;
     inputWithContext.set(this.context, 0);
     inputWithContext.set(chunk, contextSize);
 
     const feeds = {
       input: new ort.Tensor('float32', inputWithContext, [1, inputWithContext.length]),
       state: new ort.Tensor('float32', this.state, [2, 1, 128]),
-      sr: new ort.Tensor('int64', BigInt64Array.from([BigInt(sr)])),
+      sr: this.srTensor,
     };
 
-    const outputNames = this.session.outputNames;
     const results = await this.session.run(feeds);
-    const probTensor = results[outputNames[0]];
-    const newStateTensor = results[outputNames[1]];
+    const probTensor = results[this.outputNames[0]];
+    const newStateTensor = results[this.outputNames[1]];
 
-    this.state = newStateTensor.data.slice(); // keep a copy
-    this.context = inputWithContext.slice(inputWithContext.length - contextSize);
+    this.state.set(newStateTensor.data);
+    this.context.set(inputWithContext.subarray(inputWithContext.length - contextSize));
     this.lastSr = sr;
 
     return probTensor.data[0];

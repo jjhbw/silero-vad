@@ -5,8 +5,8 @@ const fsp = fs.promises;
 const path = require('path');
 const {
   loadSileroVad,
-  getSpeechTimestampsFromFfmpeg,
-  writeStrippedAudioWithFfmpeg,
+  getSpeechTimestamps,
+  writeStrippedAudio,
   WEIGHTS,
 } = require('./lib');
 
@@ -33,7 +33,7 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
         // reuse session, reset stream state per file
         vad.resetStates();
         const t0 = performance.now();
-        const { timestamps, totalSamples } = await getSpeechTimestampsFromFfmpeg(audioPath, vad, {
+        const { timestamps, totalSamples } = await getSpeechTimestamps(audioPath, vad, {
           threshold: args.threshold,
           minSpeechDurationMs: args.minSpeechDurationMs,
           minSilenceDurationMs: args.minSilenceDurationMs,
@@ -114,7 +114,7 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
             );
             const stripT0 = performance.now();
             const memBefore = process.memoryUsage();
-            await writeStrippedAudioWithFfmpeg(
+            await writeStrippedAudio(
               audioPath,
               segmentsSeconds,
               effectiveSampleRate,

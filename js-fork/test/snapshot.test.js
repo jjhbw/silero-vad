@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
 
-const { getSpeechTimestampsFromFfmpeg, loadSileroVad } = require('..');
+const { getSpeechTimestamps, loadSileroVad } = require('..');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SNAPSHOT_DIR = path.join(ROOT, 'tests', 'snapshots');
@@ -33,7 +33,7 @@ test('onnx snapshot matches python ground truth', async () => {
     await test(`file ${entry.file}`, async () => {
       vad.resetStates();
       const wavPath = path.join(DATA_DIR, entry.file);
-      const ts = await getSpeechTimestampsFromFfmpeg(wavPath, vad, {
+      const ts = await getSpeechTimestamps(wavPath, vad, {
         threshold: 0.5,
         returnSeconds: true,
         timeResolution: 3,

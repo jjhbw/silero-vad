@@ -89,7 +89,7 @@ async function loadSileroVad(model = 'default', opts = {}) {
   return vad;
 }
 
-async function getSpeechTimestampsFromFfmpeg(
+async function getSpeechTimestamps(
   inputPath,
   vad,
   {
@@ -304,7 +304,7 @@ async function getSpeechTimestampsFromFfmpeg(
   return result;
 }
 
-async function writeStrippedAudioWithFfmpeg(inputPath, segmentsSeconds, sampleRate, outputPath) {
+async function writeStrippedAudio(inputPath, segmentsSeconds, sampleRate, outputPath) {
   if (!segmentsSeconds || !segmentsSeconds.length) {
     throw new Error('No valid speech segments to write');
   }
@@ -346,7 +346,7 @@ async function writeStrippedAudioWithFfmpeg(inputPath, segmentsSeconds, sampleRa
 
 module.exports = {
   loadSileroVad,
-  getSpeechTimestampsFromFfmpeg,
-  writeStrippedAudioWithFfmpeg,
+  getSpeechTimestamps,
+  writeStrippedAudio,
   WEIGHTS,
 };

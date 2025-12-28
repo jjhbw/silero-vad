@@ -7,8 +7,8 @@ const path = require('path');
 const { performance } = require('perf_hooks');
 const {
   loadSileroVad,
-  getSpeechTimestampsFromFfmpeg,
-  writeStrippedAudioWithFfmpeg,
+  getSpeechTimestamps,
+  writeStrippedAudio,
   WEIGHTS,
 } = require('./lib');
 
@@ -250,7 +250,7 @@ async function runBenchmarks({
   const vadTimes = [];
   for (let i = 0; i < runs; i += 1) {
     const t0 = performance.now();
-    await getSpeechTimestampsFromFfmpeg(audioPath, vad, vadOptions);
+    await getSpeechTimestamps(audioPath, vad, vadOptions);
     const t1 = performance.now();
     vadTimes.push(t1 - t0);
     recordMemoryUsage(memStats);
@@ -262,7 +262,7 @@ async function runBenchmarks({
   for (let i = 0; i < runs; i += 1) {
     const t0 = performance.now();
     let outputPath = null;
-    const timestamps = await getSpeechTimestampsFromFfmpeg(audioPath, vad, vadOptions);
+    const timestamps = await getSpeechTimestamps(audioPath, vad, vadOptions);
     const segments = timestamps.map(({ start, end }) => ({ start, end }));
     if (!segments.length) {
       skippedStrip += 1;
@@ -276,7 +276,7 @@ async function runBenchmarks({
       `${path.basename(audioPath, path.extname(audioPath))}_speech_${i + 1}.wav`,
     );
     const stripT0 = performance.now();
-    await writeStrippedAudioWithFfmpeg(audioPath, segments, sampleRate, outputPath);
+    await writeStrippedAudio(audioPath, segments, sampleRate, outputPath);
     const stripT1 = performance.now();
     stripWriteTimes.push(stripT1 - stripT0);
     const t1 = performance.now();
@@ -315,7 +315,7 @@ async function runBenchmarks({
 
 async function runWarmup({ audioPath, vad, sampleRate, warmup, vadOptions }) {
   for (let i = 0; i < warmup; i += 1) {
-    await getSpeechTimestampsFromFfmpeg(audioPath, vad, vadOptions);
+    await getSpeechTimestamps(audioPath, vad, vadOptions);
   }
 }
 

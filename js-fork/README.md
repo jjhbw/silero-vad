@@ -45,23 +45,39 @@ The benchmark reports timings per file for streaming VAD and silence stripping. 
 ## Library usage
 
 ```js
-const { loadSileroVad, getSpeechTimestampsFromFfmpeg, WEIGHTS } = require('./lib');
+const {
+  loadSileroVad,
+  getSpeechTimestamps,
+  writeStrippedAudio,
+  WEIGHTS
+} = require('./lib');
 
 (async () => {
   const vad = await loadSileroVad('default'); // or WEIGHTS keys/custom path
   try {
     if (!vad.sampleRate) throw new Error('Model sample rate is undefined');
-    vad.resetStates(); // per file/stream
-    const ts = await getSpeechTimestampsFromFfmpeg('input.wav', vad, { returnSeconds: true });
-    // Each entry includes both seconds (start/end) and samples (startSample/endSample).
-    console.log(ts);
-    // Example return value:
-    // [
-    //   { start: 0.36, end: 1.92, startSample: 5760, endSample: 30720 },
-    //   { start: 2.41, end: 3.05, startSample: 38560, endSample: 48800 }
-    // ]
+    const inputs = ['input.wav', 'other.mp3'];
+    for (const inputPath of inputs) {
+      vad.resetStates(); // per file/stream
+      const ts = await getSpeechTimestamps(inputPath, vad, { returnSeconds: true });
+      // Each entry includes both seconds (start/end) and samples (startSample/endSample).
+      console.log(inputPath, ts);
+      // Example return value:
+      // [
+      //   { start: 0.36, end: 1.92, startSample: 5760, endSample: 30720 },
+      //   { start: 2.41, end: 3.05, startSample: 38560, endSample: 48800 }
+      // ]
+
+      // Strip silences from the original file using the timestamps.
+      // Pick any extension supported by ffmpeg (e.g., .wav, .flac).
+      // Note: encoding speed varies by container/codec; uncompressed PCM (e.g., .wav) is fastest,
+      // lossless compression (e.g., .flac) is slower, and lossy codecs (e.g., .mp3/.aac/.opus)
+      // are typically the slowest to encode.
+      const outPath = inputPath.replace(/\.[^.]+$/, '.stripped.wav');
+      await writeStrippedAudio(inputPath, outPath, ts);
+    }
   } finally {
-    await vad.session.release?.();
+    await vad.session.release?.(); // once per process when shutting down
   }
 })();
 ```

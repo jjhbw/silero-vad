@@ -137,7 +137,9 @@ async function getSpeechTimestamps(
   const speeches = [];
   let processedSamples = 0;
   let totalSamples = 0;
-  let leftover = Buffer.alloc(0);
+  let leftoverBytes = Buffer.alloc(0);
+  let leftoverSamples = new Float32Array(0);
+  const frameScratch = new Float32Array(windowSize);
 
   const channels = 1;
   const args = [
@@ -187,36 +189,62 @@ async function getSpeechTimestamps(
 
   const streamDone = (async () => {
     for await (const chunk of ffmpeg.stdout) {
-      const leftoverSamples = leftover.length / Float32Array.BYTES_PER_ELEMENT;
-      const data = leftover.length ? Buffer.concat([leftover, chunk]) : chunk;
+      let data = chunk;
+      if (leftoverBytes.length) {
+        const combined = Buffer.allocUnsafe(leftoverBytes.length + chunk.length);
+        leftoverBytes.copy(combined, 0);
+        chunk.copy(combined, leftoverBytes.length);
+        data = combined;
+        leftoverBytes = Buffer.alloc(0);
+      }
+
       const usableBytes = data.length - (data.length % 4);
-      if (usableBytes > 0) {
-        const floatData = new Float32Array(
-          data.buffer,
-          data.byteOffset,
-          usableBytes / Float32Array.BYTES_PER_ELEMENT,
-        );
-        totalSamples += floatData.length - leftoverSamples;
-        let offset = 0;
-        while (offset + windowSize <= floatData.length) {
-          const frame = floatData.subarray(offset, offset + windowSize);
+      if (usableBytes <= 0) {
+        leftoverBytes = data;
+        continue;
+      }
+
+      leftoverBytes = data.subarray(usableBytes);
+      const floatData = new Float32Array(
+        data.buffer,
+        data.byteOffset,
+        usableBytes / Float32Array.BYTES_PER_ELEMENT,
+      );
+      totalSamples += floatData.length;
+
+      let offset = 0;
+      if (leftoverSamples.length) {
+        const needed = windowSize - leftoverSamples.length;
+        if (floatData.length >= needed) {
+          frameScratch.set(leftoverSamples, 0);
+          frameScratch.set(floatData.subarray(0, needed), leftoverSamples.length);
           const curSample = processedSamples;
           processedSamples += windowSize;
-          await processFrame(frame, curSample);
-          offset += windowSize;
-        }
-        const remainingSamples = floatData.length - offset;
-        if (remainingSamples > 0) {
-          leftover = Buffer.from(
-            data.buffer,
-            data.byteOffset + offset * Float32Array.BYTES_PER_ELEMENT,
-            remainingSamples * Float32Array.BYTES_PER_ELEMENT,
-          );
+          await processFrame(frameScratch, curSample);
+          offset = needed;
+          leftoverSamples = new Float32Array(0);
         } else {
-          leftover = Buffer.alloc(0);
+          const merged = new Float32Array(leftoverSamples.length + floatData.length);
+          merged.set(leftoverSamples, 0);
+          merged.set(floatData, leftoverSamples.length);
+          leftoverSamples = merged;
+          continue;
         }
+      }
+
+      while (offset + windowSize <= floatData.length) {
+        const frame = floatData.subarray(offset, offset + windowSize);
+        const curSample = processedSamples;
+        processedSamples += windowSize;
+        await processFrame(frame, curSample);
+        offset += windowSize;
+      }
+
+      const remainingSamples = floatData.length - offset;
+      if (remainingSamples > 0) {
+        leftoverSamples = floatData.slice(offset);
       } else {
-        leftover = data;
+        leftoverSamples = new Float32Array(0);
       }
     }
   })();
@@ -248,14 +276,26 @@ async function getSpeechTimestamps(
     });
   });
 
-  if (leftover.length) {
-    const remaining = new Float32Array(
-      leftover.buffer,
-      leftover.byteOffset,
-      leftover.length / Float32Array.BYTES_PER_ELEMENT,
-    );
+  if (leftoverBytes.length) {
+    const usableBytes = leftoverBytes.length - (leftoverBytes.length % 4);
+    if (usableBytes > 0) {
+      const tailFloats = new Float32Array(
+        leftoverBytes.buffer,
+        leftoverBytes.byteOffset,
+        usableBytes / Float32Array.BYTES_PER_ELEMENT,
+      );
+      if (tailFloats.length) {
+        const merged = new Float32Array(leftoverSamples.length + tailFloats.length);
+        merged.set(leftoverSamples, 0);
+        merged.set(tailFloats, leftoverSamples.length);
+        leftoverSamples = merged;
+      }
+    }
+  }
+
+  if (leftoverSamples.length) {
     const padded = new Float32Array(windowSize);
-    padded.set(remaining);
+    padded.set(leftoverSamples);
     const curSample = processedSamples;
     await processFrame(padded, curSample);
     processedSamples += windowSize;

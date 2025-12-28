@@ -281,6 +281,7 @@ async function runBenchmarks({
   }
 
   const stripTimes = [];
+  const stripWriteTimes = [];
   let skippedStrip = 0;
   for (let i = 0; i < runs; i += 1) {
     const t0 = performance.now();
@@ -292,13 +293,17 @@ async function runBenchmarks({
         skippedStrip += 1;
         const t1 = performance.now();
         stripTimes.push(t1 - t0);
+        stripWriteTimes.push(0);
         continue;
       }
       outputPath = path.join(
         outputDir,
         `${path.basename(audioPath, path.extname(audioPath))}_speech_${i + 1}.wav`,
       );
+      const stripT0 = performance.now();
       await writeStrippedAudioWithFfmpeg(audioPath, segments, sampleRate, outputPath);
+      const stripT1 = performance.now();
+      stripWriteTimes.push(stripT1 - stripT0);
     } else {
       const audio = await decodeWithFfmpeg(audioPath, { sampleRate });
       const timestamps = await getSpeechTimestamps(audio, vad, vadOptions);
@@ -307,13 +312,17 @@ async function runBenchmarks({
         skippedStrip += 1;
         const t1 = performance.now();
         stripTimes.push(t1 - t0);
+        stripWriteTimes.push(0);
         continue;
       }
       outputPath = path.join(
         outputDir,
         `${path.basename(audioPath, path.extname(audioPath))}_speech_${i + 1}.wav`,
       );
+      const stripT0 = performance.now();
       await writeStrippedAudio(audio, segments, sampleRate, outputPath);
+      const stripT1 = performance.now();
+      stripWriteTimes.push(stripT1 - stripT0);
     }
     const t1 = performance.now();
     stripTimes.push(t1 - t0);
@@ -330,6 +339,7 @@ async function runBenchmarks({
   }
   printStats('file_to_vad', vadTimes);
   printStats('file_to_stripped', stripTimes);
+  printStats('strip_write', stripWriteTimes);
   if (skippedStrip) {
     console.info(`strip_skipped=${skippedStrip} (no speech detected)`);
   }

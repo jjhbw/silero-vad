@@ -12,7 +12,7 @@ const {
 
 const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
 
-(async () => {
+async function main() {
   try {
     const args = parseArgs(process.argv.slice(2));
     if (!args.audio.length) {
@@ -148,7 +148,11 @@ const toMB = (b) => (b / (1024 * 1024)).toFixed(2);
     console.error(err.message || err);
     process.exit(1);
   }
-})();
+}
+
+if (require.main === module) {
+  main();
+}
 
 function parseArgs(argv) {
   const out = {
@@ -295,6 +299,11 @@ function getSpeechDurationSeconds(timestamps, timestampsInSeconds, sampleRate) {
   }
   return timestamps.reduce((sum, { start, end }) => sum + (end - start) / sampleRate, 0);
 }
+
+module.exports = {
+  getSpeechDurationSeconds,
+  parseArgs,
+};
 
 function formatDuration(seconds) {
   const whole = Math.max(0, Math.round(seconds));

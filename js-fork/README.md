@@ -1,6 +1,6 @@
 # Silero VAD Node Fork
 
-Minimal Node.js wrapper around the Silero VAD ONNX model, with a small CLI and parity tests against the Python implementation.
+Minimal Node.js wrapper around the Silero VAD ONNX model, with a small CLI and parity tests against the Python implementation. The Node implementation runs VAD and silence stripping directly from ffmpeg streams to keep memory usage low on long files.
 
 ## Install
 
@@ -31,7 +31,7 @@ Options:
 - `--output-dir <path>`: output directory for strip-silence files (default: input dir).
 
 Outputs an array of `{ file, timestamps }` to stdout as JSON. The CLI reuses a single ONNX session and resets state per file.
-The sample rate is defined by the selected model (read from `vad.sampleRate`); it is not configurable in `getSpeechTimestamps`.
+The sample rate is defined by the selected model (read from `vad.sampleRate`).
 
 ## Benchmark
 
@@ -40,28 +40,26 @@ cd js-fork
 node bench.js --audio data/test.mp3 --runs 5
 ```
 
-The benchmark reports two timings per file: file-to-VAD results and file-to-stripped-audio. Stripped-audio files are written to a temporary directory and removed after each run.
+The benchmark reports timings per file for streaming VAD and silence stripping. Stripped-audio files are written to a temporary directory and removed after each run.
 
 ## Library usage
 
 ```js
-const {
-  loadSileroVad,
-  decodeWithFfmpeg,
-  getSpeechTimestamps,
-  WEIGHTS,
-} = require('./lib');
+const { loadSileroVad, getSpeechTimestampsFromFfmpeg, WEIGHTS } = require('./lib');
 
 (async () => {
   const vad = await loadSileroVad('default'); // or WEIGHTS keys/custom path
   try {
     if (!vad.sampleRate) throw new Error('Model sample rate is undefined');
-    const sr = vad.sampleRate;
     vad.resetStates(); // per file/stream
-    const audio = await decodeWithFfmpeg('input.wav', { sampleRate: sr });
-    const ts = await getSpeechTimestamps(audio, vad, { returnSeconds: true });
+    const ts = await getSpeechTimestampsFromFfmpeg('input.wav', vad, { returnSeconds: true });
     // Each entry includes both seconds (start/end) and samples (startSample/endSample).
     console.log(ts);
+    // Example return value:
+    // [
+    //   { start: 0.36, end: 1.92, startSample: 5760, endSample: 30720 },
+    //   { start: 2.41, end: 3.05, startSample: 38560, endSample: 48800 }
+    // ]
   } finally {
     await vad.session.release?.();
   }

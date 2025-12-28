@@ -89,120 +89,6 @@ async function loadSileroVad(model = 'default', opts = {}) {
   return vad;
 }
 
-async function getSpeechTimestamps(
-  audio,
-  vad,
-  {
-    threshold = 0.5,
-    minSpeechDurationMs = 250,
-    minSilenceDurationMs = 100,
-    speechPadMs = 30,
-    returnSeconds = false,
-    timeResolution = 1,
-    negThreshold,
-  } = {},
-) {
-  if (!vad) {
-    throw new Error('Pass a loaded SileroVad instance');
-  }
-
-  const sr = vad.sampleRate;
-  if (!sr) {
-    throw new Error('VAD sample rate is undefined. Use a bundled model key.');
-  }
-  const wav = audio instanceof Float32Array ? audio : Float32Array.from(audio);
-
-  if (sr !== 8000 && sr !== 16000) {
-    throw new Error('Supported sampling rates: 8000 or 16000 (or a multiple of 16000).');
-  }
-
-  const windowSize = sr === 16000 ? 512 : 256;
-  const minSpeechSamples = (sr * minSpeechDurationMs) / 1000;
-  const minSilenceSamples = (sr * minSilenceDurationMs) / 1000;
-  const speechPadSamples = (sr * speechPadMs) / 1000;
-  const negThres = negThreshold ?? Math.max(threshold - 0.15, 0.01);
-
-  vad.resetStates();
-
-  let triggered = false;
-  let tempEnd = 0;
-  let currentSpeech = {};
-  const speeches = [];
-
-  for (let i = 0; i < wav.length; i += windowSize) {
-    const frame = wav.subarray(i, i + windowSize);
-    const padded =
-      frame.length === windowSize
-        ? frame
-        : new Float32Array([...frame, ...new Float32Array(windowSize - frame.length)]);
-
-    const speechProb = await vad.processChunk(padded, sr);
-    const curSample = i;
-
-    if (speechProb >= threshold && tempEnd) {
-      tempEnd = 0;
-    }
-
-    if (speechProb >= threshold && !triggered) {
-      triggered = true;
-      currentSpeech.start = curSample;
-      continue;
-    }
-
-    if (speechProb < negThres && triggered) {
-      if (!tempEnd) {
-        tempEnd = curSample;
-      }
-      if (curSample - tempEnd < minSilenceSamples) {
-        continue;
-      }
-
-      currentSpeech.end = tempEnd;
-      if (currentSpeech.end - currentSpeech.start > minSpeechSamples) {
-        speeches.push(currentSpeech);
-      }
-      currentSpeech = {};
-      triggered = false;
-      tempEnd = 0;
-    }
-  }
-
-  if (currentSpeech.start !== undefined) {
-    currentSpeech.end = wav.length;
-    if (currentSpeech.end - currentSpeech.start > minSpeechSamples) {
-      speeches.push(currentSpeech);
-    }
-  }
-
-  // Pad segments a bit for nicer cuts.
-  for (let idx = 0; idx < speeches.length; idx += 1) {
-    const speech = speeches[idx];
-    const prevEnd = idx === 0 ? 0 : speeches[idx - 1].end;
-    const nextStart = idx === speeches.length - 1 ? wav.length : speeches[idx + 1].start;
-    const padStart = Math.max(speech.start - speechPadSamples, prevEnd);
-    const padEnd = Math.min(speech.end + speechPadSamples, nextStart);
-    speech.start = Math.max(0, Math.floor(padStart));
-    speech.end = Math.min(wav.length, Math.floor(padEnd));
-  }
-
-  const convertSeconds = (samples) => +(samples / sr).toFixed(timeResolution);
-  if (returnSeconds) {
-    return speeches.map(({ start, end }) => ({
-      start: convertSeconds(start),
-      end: convertSeconds(end),
-      startSample: start,
-      endSample: end,
-    }));
-  }
-
-  return speeches.map(({ start, end }) => ({
-    start,
-    end,
-    startSeconds: convertSeconds(start),
-    endSeconds: convertSeconds(end),
-  }));
-}
-
 async function getSpeechTimestampsFromFfmpeg(
   inputPath,
   vad,
@@ -215,6 +101,7 @@ async function getSpeechTimestampsFromFfmpeg(
     timeResolution = 1,
     negThreshold,
     sampleRate,
+    returnMetadata = false,
   } = {},
 ) {
   if (!vad) {
@@ -384,21 +271,25 @@ async function getSpeechTimestampsFromFfmpeg(
   }
 
   const convertSeconds = (samples) => +(samples / sr).toFixed(timeResolution);
-  if (returnSeconds) {
-    return speeches.map(({ start, end }) => ({
+  const result = returnSeconds
+    ? speeches.map(({ start, end }) => ({
       start: convertSeconds(start),
       end: convertSeconds(end),
       startSample: start,
       endSample: end,
+    }))
+    : speeches.map(({ start, end }) => ({
+      start,
+      end,
+      startSeconds: convertSeconds(start),
+      endSeconds: convertSeconds(end),
     }));
+
+  if (returnMetadata) {
+    return { timestamps: result, totalSamples };
   }
 
-  return speeches.map(({ start, end }) => ({
-    start,
-    end,
-    startSeconds: convertSeconds(start),
-    endSeconds: convertSeconds(end),
-  }));
+  return result;
 }
 
 async function writeStrippedAudioWithFfmpeg(inputPath, segmentsSeconds, sampleRate, outputPath) {
@@ -441,61 +332,9 @@ async function writeStrippedAudioWithFfmpeg(inputPath, segmentsSeconds, sampleRa
   });
 }
 
-// Decode arbitrary audio with ffmpeg into mono, float32 PCM for the VAD.
-function decodeWithFfmpeg(inputPath, { sampleRate } = {}) {
-  if (!sampleRate) {
-    throw new Error('decodeWithFfmpeg: sampleRate is required');
-  }
-  let stat;
-  try {
-    stat = fs.statSync(inputPath);
-  } catch {
-    throw new Error(`Audio file not found: ${inputPath}`);
-  }
-  if (!stat.isFile()) {
-    throw new Error(`Audio path is not a file: ${inputPath}`);
-  }
-  return new Promise((resolve, reject) => {
-    const channels = 1; // mono
-    const args = [
-      '-v',
-      'error',
-      '-i',
-      inputPath,
-      '-ac',
-      String(channels),
-      '-ar',
-      String(sampleRate),
-      '-f',
-      'f32le',
-      'pipe:1',
-    ];
-    const ffmpeg = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'inherit'] });
-    const chunks = [];
-
-    ffmpeg.stdout.on('data', (data) => chunks.push(data));
-    ffmpeg.on('error', reject);
-    ffmpeg.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`ffmpeg exited with code ${code}`));
-        return;
-      }
-      const buffer = Buffer.concat(chunks);
-      const floatData = new Float32Array(
-        buffer.buffer,
-        buffer.byteOffset,
-        buffer.byteLength / Float32Array.BYTES_PER_ELEMENT,
-      );
-      resolve(floatData);
-    });
-  });
-}
-
 module.exports = {
   loadSileroVad,
-  getSpeechTimestamps,
   getSpeechTimestampsFromFfmpeg,
   writeStrippedAudioWithFfmpeg,
-  decodeWithFfmpeg,
   WEIGHTS,
 };

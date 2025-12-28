@@ -3,12 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
 
-const {
-  decodeWithFfmpeg,
-  getSpeechTimestamps,
-  getSpeechTimestampsFromFfmpeg,
-  loadSileroVad,
-} = require('..');
+const { getSpeechTimestampsFromFfmpeg, loadSileroVad } = require('..');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SNAPSHOT_DIR = path.join(ROOT, 'tests', 'snapshots');
@@ -38,8 +33,7 @@ test('onnx snapshot matches python ground truth', async () => {
     await test(`file ${entry.file}`, async () => {
       vad.resetStates();
       const wavPath = path.join(DATA_DIR, entry.file);
-      const audio = await decodeWithFfmpeg(wavPath, { sampleRate: vad.sampleRate });
-      const ts = await getSpeechTimestamps(audio, vad, {
+      const ts = await getSpeechTimestampsFromFfmpeg(wavPath, vad, {
         threshold: 0.5,
         returnSeconds: true,
         timeResolution: 3,
@@ -54,44 +48,6 @@ test('onnx snapshot matches python ground truth', async () => {
       } else {
         assert.deepStrictEqual(plainTs, entry.speech_timestamps);
       }
-    });
-  }
-
-  await vad.session.release?.();
-});
-
-test('onnx streaming snapshot matches python + non-streaming', async () => {
-  const snapshot = readSnapshot('onnx.json');
-  const vad = await loadSileroVad('default');
-
-  for (const entry of snapshot.snapshots) {
-    await test(`file ${entry.file}`, async () => {
-      const wavPath = path.join(DATA_DIR, entry.file);
-
-      vad.resetStates();
-      const nonStreamingAudio = await decodeWithFfmpeg(wavPath, { sampleRate: vad.sampleRate });
-      const nonStreamingTs = await getSpeechTimestamps(nonStreamingAudio, vad, {
-        threshold: 0.5,
-        returnSeconds: true,
-        timeResolution: 3,
-      });
-      const nonStreamingPlain = nonStreamingTs.map(({ start, end }) => ({ start, end }));
-
-      vad.resetStates();
-      const streamingTs = await getSpeechTimestampsFromFfmpeg(wavPath, vad, {
-        threshold: 0.5,
-        returnSeconds: true,
-        timeResolution: 3,
-      });
-      const streamingPlain = streamingTs.map(({ start, end }) => ({ start, end }));
-
-      if (entry.file === 'test.mp3') {
-        assertTimestampsClose(streamingPlain, entry.speech_timestamps, 0.1, `${entry.file} python`);
-      } else {
-        assertTimestampsClose(streamingPlain, entry.speech_timestamps, 0.001, `${entry.file} python`);
-      }
-
-      assertTimestampsClose(streamingPlain, nonStreamingPlain, 0.001, `${entry.file} js`);
     });
   }
 

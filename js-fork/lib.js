@@ -189,54 +189,67 @@ async function getSpeechTimestampsFromFfmpeg(
     }
   };
 
-  await new Promise((resolve, reject) => {
-    ffmpeg.on('error', reject);
-    ffmpeg.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`ffmpeg exited with code ${code}`));
+  const streamDone = (async () => {
+    for await (const chunk of ffmpeg.stdout) {
+      const leftoverSamples = leftover.length / Float32Array.BYTES_PER_ELEMENT;
+      const data = leftover.length ? Buffer.concat([leftover, chunk]) : chunk;
+      const usableBytes = data.length - (data.length % 4);
+      if (usableBytes > 0) {
+        const floatData = new Float32Array(
+          data.buffer,
+          data.byteOffset,
+          usableBytes / Float32Array.BYTES_PER_ELEMENT,
+        );
+        totalSamples += floatData.length - leftoverSamples;
+        let offset = 0;
+        while (offset + windowSize <= floatData.length) {
+          const frame = floatData.subarray(offset, offset + windowSize);
+          const curSample = processedSamples;
+          processedSamples += windowSize;
+          await processFrame(frame, curSample);
+          offset += windowSize;
+        }
+        const remainingSamples = floatData.length - offset;
+        if (remainingSamples > 0) {
+          leftover = Buffer.from(
+            data.buffer,
+            data.byteOffset + offset * Float32Array.BYTES_PER_ELEMENT,
+            remainingSamples * Float32Array.BYTES_PER_ELEMENT,
+          );
+        } else {
+          leftover = Buffer.alloc(0);
+        }
       } else {
-        resolve();
+        leftover = data;
       }
+    }
+  })();
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (fn) => (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      fn(value);
+    };
+    const resolveOnce = finish(resolve);
+    const rejectOnce = finish(reject);
+
+    streamDone.then(resolveOnce, (err) => {
+      ffmpeg.kill('SIGKILL');
+      rejectOnce(err);
     });
 
-    (async () => {
-      try {
-        for await (const chunk of ffmpeg.stdout) {
-          const data = leftover.length ? Buffer.concat([leftover, chunk]) : chunk;
-          const usableBytes = data.length - (data.length % 4);
-          if (usableBytes > 0) {
-            const floatData = new Float32Array(
-              data.buffer,
-              data.byteOffset,
-              usableBytes / Float32Array.BYTES_PER_ELEMENT,
-            );
-            totalSamples += floatData.length;
-            let offset = 0;
-            while (offset + windowSize <= floatData.length) {
-              const frame = floatData.subarray(offset, offset + windowSize);
-              const curSample = processedSamples;
-              processedSamples += windowSize;
-              await processFrame(frame, curSample);
-              offset += windowSize;
-            }
-            const remainingSamples = floatData.length - offset;
-            if (remainingSamples > 0) {
-              leftover = Buffer.from(
-                data.buffer,
-                data.byteOffset + offset * Float32Array.BYTES_PER_ELEMENT,
-                remainingSamples * Float32Array.BYTES_PER_ELEMENT,
-              );
-            } else {
-              leftover = Buffer.alloc(0);
-            }
-          } else {
-            leftover = data;
-          }
-        }
-      } catch (err) {
-        reject(err);
+    ffmpeg.on('error', rejectOnce);
+    ffmpeg.on('close', (code) => {
+      if (code !== 0) {
+        rejectOnce(new Error(`ffmpeg exited with code ${code}`));
+        return;
       }
-    })();
+      streamDone.then(resolveOnce, rejectOnce);
+    });
   });
 
   if (leftover.length) {
@@ -245,7 +258,6 @@ async function getSpeechTimestampsFromFfmpeg(
       leftover.byteOffset,
       leftover.length / Float32Array.BYTES_PER_ELEMENT,
     );
-    totalSamples += remaining.length;
     const padded = new Float32Array(windowSize);
     padded.set(remaining);
     const curSample = processedSamples;

@@ -5,8 +5,7 @@ Minimal Node.js wrapper around the Silero VAD ONNX model, with a small CLI and p
 ## Install
 
 ```bash
-cd js-fork
-npm install
+npm install @jjhbw/silero-vad
 ```
 
 Requires Node 18+ and `ffmpeg` available on `PATH` for decoding arbitrary audio formats.
@@ -33,15 +32,6 @@ Options:
 Outputs an array of `{ file, timestamps }` to stdout as JSON. The CLI reuses a single ONNX session and resets state per file.
 The sample rate is defined by the selected model (read from `vad.sampleRate`).
 
-## Benchmark
-
-```bash
-cd js-fork
-node bench.js --audio data/test.mp3 --runs 5
-```
-
-The benchmark reports timings per file for streaming VAD and silence stripping. Stripped-audio files are written to a temporary directory and removed after each run.
-
 ## Library usage
 
 ```js
@@ -50,7 +40,7 @@ const {
   getSpeechTimestamps,
   writeStrippedAudio,
   WEIGHTS
-} = require('./lib');
+} = require('@jjhbw/silero-vad');
 
 (async () => {
   const vad = await loadSileroVad('default'); // or WEIGHTS keys/custom path
@@ -74,7 +64,7 @@ const {
       // lossless compression (e.g., .flac) is slower, and lossy codecs (e.g., .mp3/.aac/.opus)
       // are typically the slowest to encode.
       const outPath = inputPath.replace(/\.[^.]+$/, '.stripped.wav');
-      await writeStrippedAudio(inputPath, outPath, ts);
+      await writeStrippedAudio(inputPath, ts, vad.sampleRate, outPath);
     }
   } finally {
     await vad.session.release?.(); // once per process when shutting down
@@ -87,12 +77,29 @@ Guidelines:
 - Call `resetStates()` before each new file/stream; the session and weights stay in memory.
 - Call `release()` when shutting down.
 
-## Tests
+## Development
+
+Clone the repo to run benchmarks and tests locally.
+
+### Benchmark
+
+```bash
+git clone https://github.com/jjhbw/silero-vad
+cd silero-vad/js-fork
+npm install
+node bench.js --audio data/test.mp3 --runs 5
+```
+
+The benchmark reports timings per file for streaming VAD and silence stripping. Stripped-audio files are written to a temporary directory and removed after each run.
+
+### Tests
 
 Snapshot tests compare Node outputs against Python ground truth (`tests/snapshots/onnx.json`):
 
 ```bash
-cd js-fork
+git clone https://github.com/jjhbw/silero-vad
+cd silero-vad/js-fork
+npm install
 npm test
 ```
 

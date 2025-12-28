@@ -1,7 +1,11 @@
 {
-  "name": "silero-vad-node",
+  "name": "@jjhbw/silero-vad",
   "version": "1.0.0",
-  "main": "lib.js",
+  "description": "Node.js bindings for Silero VAD",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
   "bin": {
     "silero-vad-cli": "cli.js"
   },
@@ -9,9 +13,24 @@
     "bench": "node bench.js --audio data/long.mp3 --runs 3 --warmup 1",
     "test": "node --test"
   },
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "author": "jjhbw",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jjhbw/silero-vad.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jjhbw/silero-vad/issues"
+  },
+  "homepage": "https://github.com/jjhbw/silero-vad#readme",
+  "files": [
+    "index.js",
+    "lib.js",
+    "cli.js",
+    "weights/",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "onnxruntime-node": "^1.23.2"
   }

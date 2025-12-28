@@ -138,8 +138,8 @@ async function getSpeechTimestamps(
   let processedSamples = 0;
   let totalSamples = 0;
   let leftoverBytes = Buffer.alloc(0);
-  let leftoverSamples = new Float32Array(0);
   const frameScratch = new Float32Array(windowSize);
+  let pendingLen = 0;
 
   const channels = 1;
   const args = [
@@ -213,21 +213,19 @@ async function getSpeechTimestamps(
       totalSamples += floatData.length;
 
       let offset = 0;
-      if (leftoverSamples.length) {
-        const needed = windowSize - leftoverSamples.length;
+      if (pendingLen) {
+        const needed = windowSize - pendingLen;
         if (floatData.length >= needed) {
-          frameScratch.set(leftoverSamples, 0);
-          frameScratch.set(floatData.subarray(0, needed), leftoverSamples.length);
+          frameScratch.set(frameScratch.subarray(0, pendingLen), 0);
+          frameScratch.set(floatData.subarray(0, needed), pendingLen);
           const curSample = processedSamples;
           processedSamples += windowSize;
           await processFrame(frameScratch, curSample);
           offset = needed;
-          leftoverSamples = new Float32Array(0);
+          pendingLen = 0;
         } else {
-          const merged = new Float32Array(leftoverSamples.length + floatData.length);
-          merged.set(leftoverSamples, 0);
-          merged.set(floatData, leftoverSamples.length);
-          leftoverSamples = merged;
+          frameScratch.set(floatData, pendingLen);
+          pendingLen += floatData.length;
           continue;
         }
       }
@@ -242,9 +240,10 @@ async function getSpeechTimestamps(
 
       const remainingSamples = floatData.length - offset;
       if (remainingSamples > 0) {
-        leftoverSamples = floatData.slice(offset);
+        frameScratch.set(floatData.subarray(offset), 0);
+        pendingLen = remainingSamples;
       } else {
-        leftoverSamples = new Float32Array(0);
+        pendingLen = 0;
       }
     }
   })();
@@ -285,17 +284,15 @@ async function getSpeechTimestamps(
         usableBytes / Float32Array.BYTES_PER_ELEMENT,
       );
       if (tailFloats.length) {
-        const merged = new Float32Array(leftoverSamples.length + tailFloats.length);
-        merged.set(leftoverSamples, 0);
-        merged.set(tailFloats, leftoverSamples.length);
-        leftoverSamples = merged;
+        frameScratch.set(tailFloats, pendingLen);
+        pendingLen += tailFloats.length;
       }
     }
   }
 
-  if (leftoverSamples.length) {
+  if (pendingLen) {
     const padded = new Float32Array(windowSize);
-    padded.set(leftoverSamples);
+    padded.set(frameScratch.subarray(0, pendingLen));
     const curSample = processedSamples;
     await processFrame(padded, curSample);
     processedSamples += windowSize;

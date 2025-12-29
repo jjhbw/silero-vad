@@ -191,7 +191,7 @@ async function getSpeechTimestamps(
     for await (const chunk of ffmpeg.stdout) {
       let data = chunk;
       if (leftoverBytes.length) {
-        const combined = Buffer.allocUnsafe(leftoverBytes.length + chunk.length);
+        const combined = Buffer.alloc(leftoverBytes.length + chunk.length);
         leftoverBytes.copy(combined, 0);
         chunk.copy(combined, leftoverBytes.length);
         data = combined;

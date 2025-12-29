@@ -72,7 +72,7 @@ Options:
 - `--min-silence-ms <ms>`: minimum silence duration in ms (default `100`).
 - `--speech-pad-ms <ms>`: padding added to each speech segment in ms (default `30`).
 - `--time-resolution <n>`: decimal places for seconds output (default `3`).
-- `--neg-threshold <float>`: override the negative threshold (default `threshold - 0.15`).
+- `--neg-threshold <float>`: override the negative threshold (default `max(threshold - 0.15, 0.01)`).
 - `--seconds`: output timestamps in seconds (default on).
 - `--cps <float>`: enable the timeline visualization and set chars per second (default `4`).
 - `--strip-silence`: write a new WAV file with silences removed.

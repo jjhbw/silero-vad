@@ -253,7 +253,7 @@ Options:
   --min-silence-ms <ms>  Minimum silence duration in ms (default: 100)
   --speech-pad-ms <ms>   Padding added to speech segments in ms (default: 30)
   --time-resolution <n>  Decimal places for seconds output (default: 3)
-  --neg-threshold <f>    Negative threshold override (default: threshold - 0.15)
+  --neg-threshold <f>    Negative threshold override (default: max(threshold - 0.15, 0.01))
   --seconds              Output timestamps in seconds (default: on)
   --cps <float>          Enable timeline visualization; chars per second (default: 4)
   --strip-silence         Write a new file with all silences removed

@@ -121,11 +121,12 @@ async function loadSileroVad(model = 'default', opts = {}) {
  * @param {number} [options.speechPadMs=30] Pad each segment on both sides, clamped
  *   to neighbors. Example: [1.000, 2.000] -> ~[0.970, 2.030].
  * @param {boolean} [options.returnSeconds=false]
- * @param {number} [options.timeResolution=1] Decimal places for seconds output.
+ * @param {number} [options.timeResolution=3] Decimal places for seconds output.
  *   Example: timeResolution=1 turns 1.23456 into 1.2.
  * @param {number} [options.negThreshold=threshold-0.15] End speech when prob dips
  *   below this; provides hysteresis vs threshold. Example: threshold=0.5,
  *   negThreshold=0.35 keeps speech open during brief 0.4 dips.
+ *   Default clamps to >= 0.01 to avoid an always-on end condition.
  * @param {number} [options.sampleRate]
  * @param {boolean} [options.returnMetadata=false]
  */
@@ -138,7 +139,7 @@ async function getSpeechTimestamps(
     minSilenceDurationMs = 100,
     speechPadMs = 30,
     returnSeconds = false,
-    timeResolution = 1,
+    timeResolution = 3,
     negThreshold,
     sampleRate,
     returnMetadata = false,
@@ -212,7 +213,7 @@ async function getSpeechTimestamps(
       }
 
       currentSpeech.end = tempEnd;
-      if (currentSpeech.end - currentSpeech.start > minSpeechSamples) {
+      if (currentSpeech.end - currentSpeech.start >= minSpeechSamples) {
         speeches.push(currentSpeech);
       }
       currentSpeech = {};
@@ -334,7 +335,7 @@ async function getSpeechTimestamps(
 
   if (currentSpeech.start !== undefined) {
     currentSpeech.end = totalSamples;
-    if (currentSpeech.end - currentSpeech.start > minSpeechSamples) {
+    if (currentSpeech.end - currentSpeech.start >= minSpeechSamples) {
       speeches.push(currentSpeech);
     }
   }

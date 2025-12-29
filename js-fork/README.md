@@ -61,7 +61,7 @@ Guidelines:
 ## CLI
 
 ```bash
-npx silero-vad-cli --audio input.wav --audio other.mp3 [options]
+npx @jjhbw/silero-vad --audio input.wav --audio other.mp3 [options]
 ```
 
 Options:

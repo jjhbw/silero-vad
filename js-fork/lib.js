@@ -4,6 +4,10 @@ const path = require('path');
 const { spawn } = require('child_process');
 const ort = require('onnxruntime-node');
 
+/**
+ * Bundled model spec map keyed by CLI/library names.
+ * @type {Record<string, {path: string, sampleRate: number}>}
+ */
 const WEIGHTS = {
   default: { path: path.join(__dirname, 'weights', 'silero_vad_16k_op15.onnx'), sampleRate: 16000 },
   '16k': { path: path.join(__dirname, 'weights', 'silero_vad_16k_op15.onnx'), sampleRate: 16000 },
@@ -82,6 +86,13 @@ class SileroVad {
   }
 }
 
+/**
+ * Load a Silero VAD ONNX model and return a ready-to-run VAD instance.
+ * @param {string} [model='default'] Bundled model key or custom ONNX path.
+ * @param {Object} [opts]
+ * @param {Object} [opts.sessionOptions] onnxruntime-node session options override.
+ * @returns {Promise<SileroVad>}
+ */
 async function loadSileroVad(model = 'default', opts = {}) {
   const spec = WEIGHTS[model];
   const modelPath = spec ? spec.path : model || WEIGHTS.default.path;
@@ -95,6 +106,29 @@ async function loadSileroVad(model = 'default', opts = {}) {
   return vad;
 }
 
+/**
+ * Run VAD on an audio file and return speech segments.
+ * @param {string} inputPath
+ * @param {SileroVad} vad
+ * @param {Object} [options]
+ * @param {number} [options.threshold=0.5] Start speech when prob >= threshold.
+ *   Example: if probs hover at 0.45-0.6, threshold=0.6 will miss soft speech.
+ * @param {number} [options.minSpeechDurationMs=250] Drop segments shorter than this.
+ *   Example: a 120 ms burst above threshold is discarded at 250 ms.
+ * @param {number} [options.minSilenceDurationMs=100] End speech only after silence
+ *   stays below negThreshold for this long.
+ *   Example: a 50 ms pause will not split a segment at 100 ms.
+ * @param {number} [options.speechPadMs=30] Pad each segment on both sides, clamped
+ *   to neighbors. Example: [1.000, 2.000] -> ~[0.970, 2.030].
+ * @param {boolean} [options.returnSeconds=false]
+ * @param {number} [options.timeResolution=1] Decimal places for seconds output.
+ *   Example: timeResolution=1 turns 1.23456 into 1.2.
+ * @param {number} [options.negThreshold=threshold-0.15] End speech when prob dips
+ *   below this; provides hysteresis vs threshold. Example: threshold=0.5,
+ *   negThreshold=0.35 keeps speech open during brief 0.4 dips.
+ * @param {number} [options.sampleRate]
+ * @param {boolean} [options.returnMetadata=false]
+ */
 async function getSpeechTimestamps(
   inputPath,
   vad,
@@ -337,6 +371,15 @@ async function getSpeechTimestamps(
   return result;
 }
 
+/**
+ * Write a new audio file containing only the provided speech segments.
+ * Uses ffmpeg; encoding is inferred from outputPath extension/container.
+ * @param {string} inputPath
+ * @param {Array<{start: number, end: number}>} segmentsSeconds Seconds-based ranges.
+ * @param {number} sampleRate Output sample rate (required by ffmpeg).
+ * @param {string} outputPath
+ * @returns {Promise<void>}
+ */
 async function writeStrippedAudio(inputPath, segmentsSeconds, sampleRate, outputPath) {
   if (!segmentsSeconds || !segmentsSeconds.length) {
     throw new Error('No valid speech segments to write');

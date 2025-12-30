@@ -1,5 +1,3 @@
-const fs = require('fs');
-const fsp = fs.promises;
 const path = require('path');
 const { spawn } = require('child_process');
 const ort = require('onnxruntime-node');

@@ -47,7 +47,6 @@ const {
             minSpeechDurationMs: args.minSpeechDurationMs,
             minSilenceDurationMs: args.minSilenceDurationMs,
             speechPadMs: args.speechPadMs,
-            returnSeconds: true,
             timeResolution: args.timeResolution,
             negThreshold: args.negThreshold,
           },

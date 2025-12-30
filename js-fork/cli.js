@@ -3,6 +3,7 @@
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
+const { spawn } = require('child_process');
 const {
   loadSileroVad,
   getSpeechTimestamps,
@@ -33,15 +34,13 @@ async function main() {
         // reuse session, reset stream state per file
         vad.resetStates();
         const t0 = performance.now();
-        const { timestamps, totalSamples } = await getSpeechTimestamps(audioPath, vad, {
+        const timestamps = await getSpeechTimestamps(audioPath, vad, {
           threshold: args.threshold,
           minSpeechDurationMs: args.minSpeechDurationMs,
           minSilenceDurationMs: args.minSilenceDurationMs,
           speechPadMs: args.speechPadMs,
-          returnSeconds: args.seconds,
           timeResolution: args.timeResolution,
           negThreshold: args.negThreshold,
-          returnMetadata: true,
         });
         const t1 = performance.now();
         results.push({ file: audioPath, timestamps });
@@ -49,10 +48,10 @@ async function main() {
         const mem = process.memoryUsage();
         const speechSeconds = getSpeechDurationSeconds(
           timestamps,
-          args.seconds,
+          true,
           effectiveSampleRate,
         );
-        const durationSeconds = totalSamples / effectiveSampleRate;
+        const durationSeconds = await getAudioDurationSeconds(audioPath);
         const silenceSeconds = Math.max(0, durationSeconds - speechSeconds);
         const totalForPct = durationSeconds > 0 ? durationSeconds : 1;
         const speechPct = (speechSeconds / totalForPct) * 100;
@@ -99,9 +98,9 @@ async function main() {
         }
 
         if (args.stripSilence) {
-          const segmentsSeconds = timestamps.map(({ start, end, startSeconds, endSeconds }) => ({
-            start: args.seconds ? start : startSeconds,
-            end: args.seconds ? end : endSeconds,
+          const segmentsSeconds = timestamps.map(({ start, end }) => ({
+            start,
+            end,
           }));
           if (!segmentsSeconds.length) {
             console.info(`strip_silence=skipped (no speech detected)`);
@@ -164,7 +163,6 @@ function parseArgs(argv) {
     speechPadMs: 30,
     timeResolution: 3,
     negThreshold: null,
-    seconds: true,
     charsPerSecond: 4,
     showTimeline: false,
     stripSilence: false,
@@ -220,8 +218,6 @@ function parseArgs(argv) {
         out.negThreshold = value;
       }
       i += 1;
-    } else if (arg === '--seconds') {
-      out.seconds = true;
     } else if (arg === '--cps') {
       const value = parseFloat(argv[i + 1]);
       out.showTimeline = true;
@@ -254,7 +250,6 @@ Options:
   --speech-pad-ms <ms>   Padding added to speech segments in ms (default: 30)
   --time-resolution <n>  Decimal places for seconds output (default: 3)
   --neg-threshold <f>    Negative threshold override (default: max(threshold - 0.15, 0.01))
-  --seconds              Output timestamps in seconds (default: on)
   --cps <float>          Enable timeline visualization; chars per second (default: 4)
   --strip-silence         Write a new file with all silences removed
   --output-dir <path>     Output directory for strip-silence files (default: input dir)
@@ -317,6 +312,44 @@ function getStripOutputPath(inputPath, outputDir) {
   const ext = path.extname(inputPath);
   const base = path.basename(inputPath, ext);
   return path.join(dir, `${base}_speech.wav`);
+}
+
+async function getAudioDurationSeconds(inputPath) {
+  const args = [
+    '-v',
+    'error',
+    // Use packet timestamps to handle containers where format duration is unreliable.
+    '-select_streams',
+    'a:0',
+    '-show_entries',
+    'packet=pts_time',
+    '-of',
+    'csv=p=0',
+    inputPath,
+  ];
+  return new Promise((resolve, reject) => {
+    const ffprobe = spawn('ffprobe', args, { stdio: ['ignore', 'pipe', 'inherit'] });
+    let output = '';
+    ffprobe.stdout.on('data', (chunk) => {
+      output += chunk.toString();
+    });
+    ffprobe.on('error', reject);
+    ffprobe.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffprobe exited with code ${code}`));
+        return;
+      }
+      const lines = output.trim().split('\n');
+      for (let i = lines.length - 1; i >= 0; i -= 1) {
+        const value = parseFloat(lines[i]);
+        if (Number.isFinite(value)) {
+          resolve(value);
+          return;
+        }
+      }
+      reject(new Error('Unable to read audio duration from ffprobe output'));
+    });
+  });
 }
 
 async function ensureUniquePath(outputPath) {

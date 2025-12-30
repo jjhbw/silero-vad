@@ -27,9 +27,7 @@ const {
     const inputs = ["input.wav", "other.mp3"];
     for (const inputPath of inputs) {
       vad.resetStates(); // per file/stream
-      const ts = await getSpeechTimestamps(inputPath, vad, {
-        returnSeconds: true,
-      });
+      const ts = await getSpeechTimestamps(inputPath, vad);
       // Each entry includes both seconds (start/end) and samples (startSample/endSample).
       console.log(inputPath, ts);
       // Example return value:
@@ -73,7 +71,6 @@ Options:
 - `--speech-pad-ms <ms>`: padding added to each speech segment in ms (default `30`).
 - `--time-resolution <n>`: decimal places for seconds output (default `3`).
 - `--neg-threshold <float>`: override the negative threshold (default `max(threshold - 0.15, 0.01)`).
-- `--seconds`: output timestamps in seconds (default on).
 - `--cps <float>`: enable the timeline visualization and set chars per second (default `4`).
 - `--strip-silence`: write a new WAV file with silences removed.
 - `--output-dir <path>`: output directory for strip-silence files (default: input dir).

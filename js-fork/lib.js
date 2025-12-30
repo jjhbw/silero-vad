@@ -118,7 +118,6 @@ async function loadSileroVad(model = 'default', opts = {}) {
  *   Example: a 50 ms pause will not split a segment at 100 ms.
  * @param {number} [options.speechPadMs=30] Pad each segment on both sides, clamped
  *   to neighbors. Example: [1.000, 2.000] -> ~[0.970, 2.030].
- * @param {boolean} [options.returnSeconds=false]
  * @param {number} [options.timeResolution=3] Decimal places for seconds output.
  *   Example: timeResolution=1 turns 1.23456 into 1.2.
  * @param {number} [options.negThreshold=threshold-0.15] End speech when prob dips
@@ -126,7 +125,8 @@ async function loadSileroVad(model = 'default', opts = {}) {
  *   negThreshold=0.35 keeps speech open during brief 0.4 dips.
  *   Default clamps to >= 0.01 to avoid an always-on end condition.
  * @param {number} [options.sampleRate]
- * @param {boolean} [options.returnMetadata=false]
+ * @returns {Promise<Array<{start: number, end: number, startSample: number, endSample: number}>>}
+ *   start/end are seconds; startSample/endSample are sample indices.
  */
 async function getSpeechTimestamps(
   inputPath,
@@ -136,11 +136,9 @@ async function getSpeechTimestamps(
     minSpeechDurationMs = 250,
     minSilenceDurationMs = 100,
     speechPadMs = 30,
-    returnSeconds = false,
     timeResolution = 3,
     negThreshold,
     sampleRate,
-    returnMetadata = false,
   } = {},
 ) {
   if (!vad) {
@@ -349,23 +347,12 @@ async function getSpeechTimestamps(
   }
 
   const convertSeconds = (samples) => +(samples / sr).toFixed(timeResolution);
-  const result = returnSeconds
-    ? speeches.map(({ start, end }) => ({
-      start: convertSeconds(start),
-      end: convertSeconds(end),
-      startSample: start,
-      endSample: end,
-    }))
-    : speeches.map(({ start, end }) => ({
-      start,
-      end,
-      startSeconds: convertSeconds(start),
-      endSeconds: convertSeconds(end),
-    }));
-
-  if (returnMetadata) {
-    return { timestamps: result, totalSamples };
-  }
+  const result = speeches.map(({ start, end }) => ({
+    start: convertSeconds(start),
+    end: convertSeconds(end),
+    startSample: start,
+    endSample: end,
+  }));
 
   return result;
 }

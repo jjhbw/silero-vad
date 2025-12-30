@@ -35,7 +35,6 @@ test('onnx snapshot matches python ground truth', async () => {
       const wavPath = path.join(DATA_DIR, entry.file);
       const ts = await getSpeechTimestamps(wavPath, vad, {
         threshold: 0.5,
-        returnSeconds: true,
         timeResolution: 3,
       });
 

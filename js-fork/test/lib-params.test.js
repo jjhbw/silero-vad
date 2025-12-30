@@ -55,11 +55,12 @@ test('getSpeechTimestamps keeps segments exactly at minSpeechDurationMs', async 
     minSpeechDurationMs: 64,
     minSilenceDurationMs: 0,
     speechPadMs: 0,
-    returnSeconds: false,
     timeResolution: 3,
   });
 
   assert.strictEqual(ts.length, 1);
   assert.strictEqual(ts[0].start, 0);
-  assert.strictEqual(ts[0].end, 1024);
+  assert.strictEqual(ts[0].end, 0.064);
+  assert.strictEqual(ts[0].startSample, 0);
+  assert.strictEqual(ts[0].endSample, 1024);
 });

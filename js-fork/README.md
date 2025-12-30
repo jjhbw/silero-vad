@@ -1,4 +1,4 @@
-# Silero VAD Node Fork
+# Silero VAD Node
 
 Minimal Node.js wrapper around the Silero VAD ONNX model, with a small CLI and parity tests against the Python implementation. The Node implementation runs VAD and silence stripping directly from ffmpeg streams to keep memory usage low on long files.
 

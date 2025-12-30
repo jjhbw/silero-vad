@@ -1,6 +1,6 @@
 {
   "name": "@jjhbw/silero-vad",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Node.js bindings for Silero VAD",
   "main": "index.js",
   "exports": {
